@@ -42,6 +42,7 @@ public sealed class CompoundWorkContext : IWorkContext
         if (station is null) return "Project has no physical workstation.";
         var definition = compound.Definition(station.DefinitionId)!;
         if (!definition.Capabilities.Contains(binding!.Capability)) return "Station lacks this work capability.";
+        if (world.TryModule<Industry.EquipmentModule>(out var equipment) && equipment.OwnerOf(station.Id) is not null) return "Station is reserved by another task.";
         if (world.Module<UtilitiesModule>().ServiceFor(station.Id) is not { Operational: true } service)
             return world.Module<UtilitiesModule>().ServiceFor(station.Id)?.BlockedReason ?? "Station utility service has not been assessed.";
         if (compound.PositionOf(worker.Id) is not { } position) return "Worker has no physical position.";

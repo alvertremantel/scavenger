@@ -40,8 +40,12 @@ public sealed class ConstructionSystem : ISystem
                     blocked = "Builder no longer meets this job's qualification.";
                 else if (workforce.ReservationFor(builder.Id) is not null || board.IsAssigned(builder.Id))
                     blocked = "Builder is assigned to another task.";
+                if (blocked is null && job.Request.RepairTargetId is { } repairTarget && world.TryModule<Industry.EquipmentModule>(out var equipment)
+                    && equipment.OwnerOf(repairTarget) is not null) blocked = "Fixture is operating or reserved by another task.";
                 if (blocked is not null) { SetReason(world, job, blocked, events); continue; }
                 if (!workforce.TryReserve(job.Request.BuilderId, job.Owner)) throw new InvalidOperationException("Builder claim changed during a serial tick.");
+                if (job.Request.RepairTargetId is { } reserveTarget && world.TryModule<Industry.EquipmentModule>(out var sharedEquipment)
+                    && !sharedEquipment.TryReserve(reserveTarget, job.Owner)) throw new InvalidOperationException("Repair station claim changed during a serial tick.");
                 int index = 0;
                 foreach (var requirement in requirements)
                 {
@@ -84,8 +88,7 @@ public sealed class ConstructionSystem : ISystem
                     && (inventory.StoredKg(s.Id) > 0 || inventory.IncomingKg(s.Id) > 0)))
                 { SetReason(world, job, "Stored or incoming goods occupy the footprint.", events); continue; }
                 if ((definition.Kind == BuildingKind.Stockpile && inventory.FindStockpile($"store/{job.Request.Id}") is not null)
-                    || (definition.Kind is BuildingKind.PowerCable or BuildingKind.WaterPipe && world.Module<UtilitiesModule>()
-                        .HasNode(definition.Kind == BuildingKind.PowerCable ? UtilityKind.Power : UtilityKind.Water, job.Request.Origin)))
+                    || (definition.ConduitKind is { } conduitKind && world.Module<UtilitiesModule>().HasNode(conduitKind, job.Request.Origin)))
                 { SetReason(world, job, "The destination store or conduit is already installed.", events); continue; }
             }
 
@@ -103,10 +106,10 @@ public sealed class ConstructionSystem : ISystem
                 if (storeId is not null)
                     inventory.AddStockpile(new Stockpile(storeId, definition.Name, definition.StoreCapacityKg, job.InteractionCell));
                 compound.Install(new BuildingSnapshot(job.Request.Id, definition.Id, job.Request.Origin, job.InteractionCell, 1, embedded, storeId));
-                if (definition.Kind is BuildingKind.PowerCable or BuildingKind.WaterPipe)
-                    world.Module<UtilitiesModule>().AddNode(definition.Kind == BuildingKind.PowerCable ? UtilityKind.Power : UtilityKind.Water, job.Request.Origin);
+                if (definition.ConduitKind is { } installedConduit) world.Module<UtilitiesModule>().AddNode(installedConduit, job.Request.Origin);
             }
             workforce.Release(job.Request.BuilderId, job.Owner);
+            if (job.Request.RepairTargetId is { } releaseTarget && world.TryModule<Industry.EquipmentModule>(out var releaseEquipment)) releaseEquipment.Release(releaseTarget, job.Owner);
             job.Status = ConstructionStatus.Completed;
             job.BlockedReason = null;
             events.Add(new GameEvent(world.Clock.Tick, CompoundEventKinds.ConstructionCompleted, EventSeverity.Positive,

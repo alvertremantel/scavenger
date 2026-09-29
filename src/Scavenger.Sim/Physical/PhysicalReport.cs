@@ -45,6 +45,8 @@ public sealed record PhysicalReport(long Tick, int Width, int Height, long Topol
             var build = world.Module<ConstructionModule>().Jobs.FirstOrDefault(j => j.Active && j.Request.BuilderId == w.Id
                 && workforce.ReservationFor(w.Id) == j.Owner);
             reason ??= build?.BlockedReason;
+            reason ??= world.TryModule<Industry.ProductionModule>(out var production) ? production.Jobs.FirstOrDefault(j => j.Active && j.Owner == workforce.ReservationFor(w.Id))?.BlockedReason : null;
+            reason ??= world.TryModule<Industry.ComputingModule>(out var computing) ? computing.Jobs.FirstOrDefault(j => j.Active && j.Owner == workforce.ReservationFor(w.Id))?.BlockedReason : null;
             return new PhysicalWorkerRow(w.Id, w.Name, compound.PositionOf(w.Id)!, workforce.ReservationFor(w.Id) ?? project?.Id,
                 haul?.Cargo is not null, haul?.Cargo?.QuantityKg ?? 0, reason, w.Skills.Ratings);
         }).ToList();
@@ -71,11 +73,19 @@ public sealed record PhysicalReport(long Tick, int Width, int Height, long Topol
                 var project = board.Projects.FirstOrDefault(p => !p.Completed && p.AssignedStaffIds.Contains(worker.Id));
                 if (target is null && project is not null && compound.BindingFor(project.Id) is { } binding)
                     target = compound.FindBuilding(binding.BuildingId)?.InteractionCell;
+                if (target is null && world.TryModule<Industry.ProductionModule>(out var production)
+                    && production.Jobs.FirstOrDefault(j => j.Active && j.Owner == workforce.ReservationFor(worker.Id)) is { } process)
+                    target = compound.FindBuilding(process.Plan.StationId)?.InteractionCell;
+                if (target is null && world.TryModule<Industry.ComputingModule>(out var computing)
+                    && computing.Jobs.FirstOrDefault(j => j.Active && j.Owner == workforce.ReservationFor(worker.Id)) is { } task)
+                    target = compound.FindBuilding(task.Site.StationId)?.InteractionCell;
             }
             if (target is not null) paths.Add(new TravelPathRow(worker.Id, target, Navigation.FindPath(compound, worker.Position, target)));
         }
         return new PhysicalReport(world.Clock.Tick, compound.Width, compound.Height, compound.TopologyRevision,
-            inventoryReport.StoredKg + inventoryReport.InTransitKg + buildings.Sum(b => b.EmbeddedKg), inventoryReport,
+            inventoryReport.StoredKg + inventoryReport.InTransitKg + buildings.Sum(b => b.EmbeddedKg)
+                + (world.TryModule<Industry.ComputingModule>(out var computers) ? computers.InstalledMassKg : 0)
+                + (world.TryModule<Industry.EnergyModule>(out var energy) ? energy.SpentFuelKg : 0), inventoryReport,
             tiles, buildings, workers, construction, compound.Rooms.Select(compound.InspectRoom).ToList(), utilities.Nodes,
             utilities.Services, world.Events.Entries.TakeLast(30).Select(e => $"[{e.Tick}] {e.Description}").ToList(), paths,
             board.Projects.OrderBy(p => p.Id, StringComparer.Ordinal).Select(p => new PhysicalProjectRow(p.Id, p.Name,

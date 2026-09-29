@@ -6,8 +6,8 @@ namespace Scavenger.Sim.Physical;
 
 public enum Terrain { Ground, Floor, Wall, OpenDoor, ClosedDoor, Water, Rock }
 public sealed record Tile(Terrain Terrain, bool Roofed = false);
-public enum BuildingKind { Floor, Wall, Door, Stockpile, Workbench, Generator, Pump, Clinic, PowerCable, WaterPipe }
-public enum UtilityKind { Power, Water }
+public enum BuildingKind { Floor, Wall, Door, Stockpile, Workbench, Generator, Pump, Clinic, PowerCable, WaterPipe, Computer, Battery, DataCable }
+public enum UtilityKind { Power, Water, Data }
 public sealed record MaterialRequirement(string MaterialId, decimal QuantityKg, decimal MinimumPurity = 0);
 
 public sealed record BuildingDefinition
@@ -62,7 +62,9 @@ public sealed record BuildingDefinition
     public decimal WaterSupplyLph { get; }
     public decimal WaterDemandLph { get; }
     public int UtilityPriority { get; }
-    public int Layer => Kind switch { BuildingKind.Floor => 0, BuildingKind.PowerCable => 2, BuildingKind.WaterPipe => 3, _ => 1 };
+    public int Layer => Kind switch { BuildingKind.Floor => 0, BuildingKind.PowerCable => 2, BuildingKind.WaterPipe => 3, BuildingKind.DataCable => 4, _ => 1 };
+    [JsonIgnore]
+    public UtilityKind? ConduitKind => Kind switch { BuildingKind.PowerCable => UtilityKind.Power, BuildingKind.WaterPipe => UtilityKind.Water, BuildingKind.DataCable => UtilityKind.Data, _ => null };
 }
 
 public sealed class Building

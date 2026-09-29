@@ -3,22 +3,25 @@ using System.Text.Json;
 using Haldane.Kernel.Serialization;
 using Scavenger.Sim;
 using Scavenger.Sim.Physical;
+using Scavenger.Sim.Industry;
 
 CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
-bool json = args.Contains("--json"), roundtrip = args.Contains("--roundtrip"), legacy = args.Contains("--legacy");
-int ticks = legacy ? 8 : 120;
+bool json = args.Contains("--json"), roundtrip = args.Contains("--roundtrip"), legacy = args.Contains("--legacy"), industry = args.Contains("--industry");
+int ticks = industry ? 2400 : legacy ? 8 : 120;
 for (int i = 0; i < args.Length; i++)
 {
-    if (args[i] is "--json" or "--roundtrip" or "--legacy") continue;
+    if (args[i] is "--json" or "--roundtrip" or "--legacy" or "--industry") continue;
     if (args[i] == "--ticks" && i + 1 < args.Length && int.TryParse(args[++i], out ticks) && ticks is >= 1 and <= 100_000) continue;
-    Console.Error.WriteLine("Usage: dotnet run --project src/Scavenger.Cli -- [--json] [--roundtrip] [--ticks N] [--legacy]");
+    Console.Error.WriteLine("Usage: dotnet run --project src/Scavenger.Cli -- [--json] [--roundtrip] [--ticks N] [--legacy | --industry]");
     return 2;
 }
-var (_, scheduler, _) = legacy ? CompoundScenario.Create() : PhysicalCompoundScenario.Create();
+if (legacy && industry) { Console.Error.WriteLine("Choose either --legacy or --industry."); return 2; }
+var (_, scheduler, _) = industry ? IndustrialScenario.Create() : legacy ? CompoundScenario.Create() : PhysicalCompoundScenario.Create();
 if (!json) Console.WriteLine(legacy ? "Timed logistics experiment.\n" : "Physical compound: walking, door access, construction deliveries, and workstation utilities.\n");
 for (int step = 0; step < ticks; step++)
 {
-    if (legacy) CompoundScenario.QueueDemoCommands(scheduler);
+    if (industry) IndustrialWalkthrough.QueueNext(scheduler);
+    else if (legacy) CompoundScenario.QueueDemoCommands(scheduler);
     else PhysicalCompoundScenario.QueueDemoCommands(scheduler);
     var events = scheduler.Advance();
     if (!json)
@@ -32,7 +35,7 @@ for (int step = 0; step < ticks; step++)
     }
 }
 var report = CompoundReport.Capture(scheduler.World);
-if (json) Console.WriteLine(legacy ? JsonSerializer.Serialize(report, SaveManager.Options)
+if (json) Console.WriteLine(industry ? JsonSerializer.Serialize(new { Physical = PhysicalReport.Capture(scheduler.World), Industry = IndustryReport.Capture(scheduler.World) }, SaveManager.Options) : legacy ? JsonSerializer.Serialize(report, SaveManager.Options)
     : JsonSerializer.Serialize(PhysicalReport.Capture(scheduler.World), SaveManager.Options));
 else
 {
@@ -50,5 +53,12 @@ else
         foreach (var job in physical.Construction) Console.WriteLine($"{job.Id}: {job.Status}; {job.CompletedEffort}/{job.RequiredEffort} effort.");
         foreach (var worker in physical.Workers) Console.WriteLine($"{worker.Name}: ({worker.Position.X},{worker.Position.Y}); {worker.Assignment ?? "idle"}.");
     }
+}
+if (industry && !json)
+{
+    var industrial = IndustryReport.Capture(scheduler.World);
+    foreach (var machine in industrial.Machines) Console.WriteLine($"{machine.Id}: {machine.Components.Count} parts, RAM {machine.RamGiB} GiB, VRAM {machine.VramGiB} GiB, disk {machine.UsedStorageGiB:0.000}/{machine.StorageGiB} GiB.");
+    foreach (var job in industrial.Computing.Jobs) Console.WriteLine($"{job.Plan.Kind}: {job.Status}; {job.Progress:0.##} effort. {job.BlockedReason}");
+    Console.WriteLine($"Generated {industrial.Energy.GeneratedKwh:0.000} kWh; used {industrial.Energy.UsedKwh:0.000} kWh; losses {industrial.Energy.LossKwh:0.000} kWh. Fuel available {industrial.FuelAvailableKg:0.00} kg.");
 }
 return 0;
