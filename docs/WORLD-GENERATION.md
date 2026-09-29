@@ -1,4 +1,6 @@
-# Generated regions — playable baseline
+# Generated regions — version-one baseline
+
+This document records the original ten-square-mile implementation. The current default is the [expanded fifty-square-mile generator with fractional terrain](EXPANDED-GEOGRAPHY.md). Version-one saves retain the geography described here.
 
 Scavenging is committed and merged into `main`. World generation is developed on `feature/regional-world-generation`. The independent Haldane checkout and engine pin are unchanged. This document describes provisional content and actual implemented behavior, not a finalized geography or balancing spec.
 

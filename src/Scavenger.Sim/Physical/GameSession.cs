@@ -17,6 +17,8 @@ public sealed class GameSession
     private bool _regional;
     private bool _generated;
     private ulong _seed;
+    private SettlementMotif? _motif;
+    private bool _legacyRegion;
     public GameSession(bool regional = true, bool generated = true, ulong seed = GeneratedScenario.DefaultSeed)
     {
         _regional = regional; _generated = regional && generated; _seed = seed;
@@ -24,6 +26,7 @@ public sealed class GameSession
         Status = regional ? "Mira is ill. Recover pharmacy stock and hardware sorbent, then prepare clinic treatment. Plan your next expedition under Scavenging."
             : "Plan recovery orders, examine the electronics cache, or build your compound.";
     }
+    public SettlementMotif? RegionMotifPreference => _motif;
     public Scheduler Scheduler { get; private set; }
     public World World => Scheduler.World;
     public PhysicalReport Report => PhysicalReport.Capture(World);
@@ -87,6 +90,8 @@ public sealed class GameSession
         Scheduler = loaded;
         _regional = World.Has<ScavengingModule>(); _generated = World.Has<RegionModule>();
         _seed = World.Rng.MasterSeed;
+        _motif = _generated ? World.Module<RegionModule>().Motif : null;
+        _legacyRegion = _generated && World.Module<RegionModule>().GeneratorVersion == 1;
         Status = $"Loaded compound at tick {World.Clock.Tick}.";
         Changed?.Invoke();
     }
@@ -101,12 +106,12 @@ public sealed class GameSession
     }
     public void Reset()
     {
-        var (_, scheduler, _) = _generated ? GeneratedScenario.Create(_seed) : _regional ? ScavengingScenario.Create(_seed) : IndustrialScenario.Create(_seed); Scheduler = scheduler;
+        var (_, scheduler, _) = _generated ? GeneratedScenario.Create(_seed, _motif, _legacyRegion) : _regional ? ScavengingScenario.Create(_seed) : IndustrialScenario.Create(_seed); Scheduler = scheduler;
         Status = "Fresh compound."; Changed?.Invoke();
     }
-    public void NewRegion(ulong seed)
+    public void NewRegion(ulong seed, SettlementMotif? motif = null)
     {
-        var (_, scheduler, _) = GeneratedScenario.Create(seed); Scheduler = scheduler; _seed = seed; _regional = true; _generated = true;
+        var (_, scheduler, _) = GeneratedScenario.Create(seed, motif); Scheduler = scheduler; _seed = seed; _motif = motif; _legacyRegion = false; _regional = true; _generated = true;
         Status = $"New region: {World.Module<RegionModule>().Name}, seed {seed}. Mira needs clinic treatment.";
         Changed?.Invoke();
     }

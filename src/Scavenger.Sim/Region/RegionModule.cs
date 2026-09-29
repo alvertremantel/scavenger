@@ -13,22 +13,39 @@ public sealed class RegionModule : IPersistentModule
     private readonly Dictionary<RegionPoint, int> _distance;
     public RegionModule(RegionSnapshot snapshot)
     {
-        if (snapshot.GeneratorVersion != 1 || snapshot.Width != 64 || snapshot.Height != 64 || snapshot.CellMeters != 80
-            || snapshot.Cells.Count != snapshot.Width * snapshot.Height || snapshot.WalkingMetersPerTick is < 1 or > 10000
+        if ((snapshot.GeneratorVersion == 1 ? snapshot.Width != 64 || snapshot.Height != 64 : snapshot.GeneratorVersion != 2 || snapshot.Width != 142 || snapshot.Height != 142) || snapshot.CellMeters != 80
+            || snapshot.Cells.Count != snapshot.Width * snapshot.Height || snapshot.WalkingMetersPerTick is < 1 or > 96000
             || string.IsNullOrWhiteSpace(snapshot.Name)) throw new ArgumentException("Invalid regional geography header.");
-        _snapshot = snapshot with { Cells = Array.AsReadOnly(snapshot.Cells.ToArray()), Roads = Array.AsReadOnly(snapshot.Roads.ToArray()), Sites = Array.AsReadOnly(snapshot.Sites.ToArray()) };
+        _snapshot = snapshot with { Cells = Array.AsReadOnly(snapshot.Cells.Select(c => c with { Cover = c.Cover is null ? null : Array.AsReadOnly(c.Cover.ToArray()) }).ToArray()), Roads = Array.AsReadOnly(snapshot.Roads.ToArray()), Sites = Array.AsReadOnly(snapshot.Sites.ToArray()), Centers = Array.AsReadOnly((snapshot.Centers ?? []).ToArray()) };
         _roadPoints = snapshot.Roads.Select(r => r.Point).ToHashSet();
         Require(snapshot.Roads.Count == _roadPoints.Count && snapshot.Roads.Count > 0 && snapshot.Roads.All(r => Contains(r.Point) && Enum.IsDefined(r.Kind)), "Duplicate or invalid regional road.");
         Require(snapshot.Cells.All(c => Enum.IsDefined(c.Terrain) && Enum.IsDefined(c.District)), "Unknown regional terrain/district.");
-        Require(Contains(Compound) && Cell(Compound).Terrain != RegionalTerrain.River && !_roadPoints.Contains(Compound)
+        foreach (var cell in Cells)
+            Require(cell.ElevationMeters is >= 0 and <= 1000 && cell.Moisture is >= 0 and <= 1 && cell.FloodRisk is >= 0 and <= 1 && cell.Roughness is >= 0 and <= 1
+                && (cell.Cover is null ? snapshot.GeneratorVersion == 1 : cell.Cover.Count is > 0 and <= 10 && cell.Cover.Sum(s => s.Fraction) == 1
+                    && cell.Cover.Select(s => s.Kind).Distinct().Count() == cell.Cover.Count && cell.Cover.All(s => Enum.IsDefined(s.Kind) && s.Fraction is > 0 and <= 1)), "Invalid regional terrain composition or field.");
+        if (snapshot.GeneratorVersion == 2)
+            foreach (var cell in Cells)
+            {
+                var dominant = cell.Cover!.OrderByDescending(s => s.Fraction).ThenBy(s => s.Kind).First().Kind;
+                var expected = dominant is TerrainKind.River or TerrainKind.Lake ? RegionalTerrain.River : dominant == TerrainKind.Woodland ? RegionalTerrain.Woods : RegionalTerrain.Land;
+                Require(cell.Terrain == expected, "Dominant terrain disagrees with fractional cover.");
+            }
+        Require(Enum.IsDefined(snapshot.Motif), "Unknown settlement motif.");
+        if (snapshot.GeneratorVersion == 2)
+            Require(Centers.Count(c => c.Role == SettlementRole.MainTown) == 1 && Centers.Count(c => c.Role == SettlementRole.Suburb) is >= 2 and <= 3
+                && Centers.Count(c => c.Role == SettlementRole.SecondaryCenter) == (Motif == SettlementMotif.TwinCenters ? 1 : 0)
+                && Centers.All(c => Contains(c.Point) && Enum.IsDefined(c.Role) && !string.IsNullOrWhiteSpace(c.Name))
+                && Centers.Select(c => c.Point).Distinct().Count() == Centers.Count, "Invalid settlement centers.");
+        Require(Contains(Compound) && Cell(Compound).CanHostSite && !_roadPoints.Contains(Compound)
             && _roadPoints.Contains(snapshot.CompoundAccess) && Compound.Manhattan(snapshot.CompoundAccess) == 1, "Compound needs a land parcel and adjacent road.");
-        Require(snapshot.Roads.All(r => (Cell(r.Point).Terrain == RegionalTerrain.River) == (r.Kind == RoadKind.Bridge)), "River roads must be explicit bridges; bridges must cross water.");
+        Require(snapshot.Roads.All(r => Cell(r.Point).NeedsBridge == (r.Kind == RoadKind.Bridge)), "River roads must be explicit bridges; bridges must cross water.");
         _distance = Distances(snapshot.CompoundAccess);
         Require(_distance.Count == snapshot.Roads.Count, "Regional roads must form one connected network.");
         var occupied = new HashSet<RegionPoint> { Compound }; var ids = new HashSet<string>(StringComparer.Ordinal);
         foreach (var site in Sites)
             Require(ids.Add(site.LocationId) && !string.IsNullOrWhiteSpace(site.Variant) && Contains(site.Parcel)
-                && occupied.Add(site.Parcel) && !_roadPoints.Contains(site.Parcel) && Cell(site.Parcel).Terrain != RegionalTerrain.River
+                && occupied.Add(site.Parcel) && !_roadPoints.Contains(site.Parcel) && Cell(site.Parcel).CanHostSite
                 && _distance.ContainsKey(site.Access) && site.Parcel.Manhattan(site.Access) == 1
                 && RegionalContent.Type(site.TypeId) is { } type && type.Districts.Contains(Cell(site.Parcel).District)
                 && site.RoadDistanceMeters == (_distance[site.Access] + 2) * CellMeters, "Invalid regional site, district, access or distance.");
@@ -38,6 +55,9 @@ public sealed class RegionModule : IPersistentModule
     public int SchemaVersion => 1;
     public string Name => _snapshot.Name;
     public ulong Seed => _snapshot.Seed;
+    public int GeneratorVersion => _snapshot.GeneratorVersion;
+    public SettlementMotif Motif => _snapshot.Motif;
+    public IReadOnlyList<SettlementCenter> Centers => _snapshot.Centers!;
     public int Width => _snapshot.Width;
     public int Height => _snapshot.Height;
     public int CellMeters => _snapshot.CellMeters;

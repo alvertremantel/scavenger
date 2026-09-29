@@ -116,7 +116,7 @@ public static class RegionalContent
         RegionCell cell, Rng rng, bool starter = false)
     {
         decimal integrity = starter ? .82m : rng.NextInt(42, 94) / 100m;
-        bool damp = cell.District == LandUse.Floodplain || variant == 2 && rng.Chance(.6);
+        bool damp = cell.Moisture > .7m || cell.FloodRisk > .45m || cell.District == LandUse.Floodplain || variant == 2 && rng.Chance(.6);
         if (damp && !starter) integrity = Math.Max(.3m, integrity - .12m);
         var objects = new List<SalvageDefinition>();
         foreach (var source in Objects(type.Id, variant))

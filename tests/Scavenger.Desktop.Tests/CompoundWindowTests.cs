@@ -209,6 +209,38 @@ public class CompoundWindowTests
             finally { window.Close(); }
         }, CancellationToken.None);
     }
+    [Fact]
+    public async Task FractionalTerrainLayoutLayersAndZoomAreInspectableThroughActualMapInput()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(RenderAppBuilder));
+        await session.Dispatch(() =>
+        {
+            var window = new MainWindow { Width = 1050, Height = 780 }; window.Show();
+            try
+            {
+                Find<TextBox>(window, "RegionSeed").Text = "42";
+                SelectChoice(window, "RegionMotif", "TwinCenters"); Click(window, Find<Button>(window, "GenerateRegionButton"));
+                var map = window.Session.World.Module<RegionModule>(); Assert.Equal(SettlementMotif.TwinCenters, map.Motif);
+                var cell = Enumerable.Range(0, map.Cells.Count).Where(i => map.Cells[i].Cover!.Count > 1)
+                    .Select(i => new RegionPoint(i % map.Width, i / map.Width)).First(p => map.Sites.All(s => s.Parcel.Manhattan(p) > 2));
+                var point = window.Region.Map.TranslatePoint(window.Region.Map.ParcelCenter(cell), window)!.Value;
+                window.MouseDown(point, MouseButton.Left, RawInputModifiers.None); window.MouseUp(point, MouseButton.Left, RawInputModifiers.None); Dispatcher.UIThread.RunJobs();
+                Assert.Equal(cell, window.Region.Map.SelectedCell); Assert.Null(window.Region.Map.SelectedSite);
+                Assert.Contains(window.GetVisualDescendants().OfType<TextBlock>(), t => t.Text?.Contains("Mean elevation") == true);
+                Find<ComboBox>(window, "RegionLayer").SelectedItem = MapLayer.FloodRisk; Dispatcher.UIThread.RunJobs();
+                Assert.Equal(MapLayer.FloodRisk, window.Region.Map.Layer);
+                double before = window.Region.Map.ParcelCenter(new(cell.X + 1, cell.Y)).X - window.Region.Map.ParcelCenter(cell).X;
+                Click(window, Find<Button>(window, "RegionZoom"));
+                double after = window.Region.Map.ParcelCenter(new(cell.X + 1, cell.Y)).X - window.Region.Map.ParcelCenter(cell).X;
+                Assert.Equal(before * 2, after, 6);
+                using var frame = window.CaptureRenderedFrame(); Assert.NotNull(frame);
+                using var bytes = new MemoryStream(); frame.Save(bytes, PngBitmapEncoderOptions.Default); Assert.True(bytes.Length > 15000);
+                Click(window, Find<Button>(window, "RegionFit"));
+                Assert.Equal(before, window.Region.Map.ParcelCenter(new(cell.X + 1, cell.Y)).X - window.Region.Map.ParcelCenter(cell).X, 6);
+            }
+            finally { window.Close(); }
+        }, CancellationToken.None);
+    }
     private static void SelectParts(MainWindow window, IEnumerable<string> ids)
     {
         var selector = window.Industry.ComponentSelector; selector.SelectedItems!.Clear();

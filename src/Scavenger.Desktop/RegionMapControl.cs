@@ -11,16 +11,25 @@ public sealed class RegionMapControl : Control
 {
     private RegionModule? _region;
     private string? _selected;
-    public RegionModule? Region { get => _region; set { _region = value; InvalidateVisual(); } }
+    private MapLayer _layer;
+    private IBrush[]? _cellColors;
+    private double _zoom = 1;
+    private RegionPoint? _focus;
+    public RegionPoint? SelectedCell { get; private set; }
+    public MapLayer Layer { get => _layer; set { _layer = value; _cellColors = null; InvalidateVisual(); } }
+    public void Zoom(bool fit = false) { _zoom = fit ? 1 : Math.Min(8, _zoom * 2); _focus = SelectedCell ?? Region?.Compound; InvalidateVisual(); }
+    public RegionModule? Region { get => _region; set { if (_region != value) { _cellColors = null; _zoom = 1; _focus = null; SelectedCell = null; } _region = value; InvalidateVisual(); } }
     public string? SelectedSite { get => _selected; set { _selected = value; InvalidateVisual(); } }
     public string? HighlightType { get; set; }
     public event Action<string>? SiteClicked;
-    private double Scale => Region is null ? 1 : Math.Max(.1, Math.Min((Bounds.Width - 36) / Region.Width, (Bounds.Height - 64) / Region.Height));
-    private Point Offset => Region is null ? default : new((Bounds.Width - Region.Width * Scale) / 2, (Bounds.Height - Region.Height * Scale) / 2);
+    public event Action<RegionPoint>? CellClicked;
+    private double Scale => Region is null ? 1 : Math.Max(.1, Math.Min((Bounds.Width - 36) / Region.Width, (Bounds.Height - 64) / Region.Height)) * _zoom;
+    private Point Offset => Region is null ? default : _zoom > 1 && _focus is { } p
+        ? new(Bounds.Width / 2 - (p.X + .5) * Scale, Bounds.Height / 2 - (p.Y + .5) * Scale)
+        : new((Bounds.Width - Region.Width * Scale) / 2, (Bounds.Height - Region.Height * Scale) / 2);
     public Point ParcelCenter(RegionPoint p) => Offset + new Vector((p.X + .5) * Scale, (p.Y + .5) * Scale);
     private static IBrush Brush(string s) => new SolidColorBrush(Color.Parse(s));
-    private static readonly Dictionary<LandUse, IBrush> Districts = Enum.GetValues<LandUse>().ToDictionary(d => d, d => Brush(RegionMapExport.DistrictColor(d)));
-    private static readonly IBrush River = Brush("#3184a5"), Ink = Brush("#111c24"), Roads = Brush("#9da496"), Gold = Brush("#efc56d");
+    private static readonly IBrush Ink = Brush("#111c24"), Roads = Brush("#9da496"), Gold = Brush("#efc56d");
     private static void Text(DrawingContext c, string value, Point p, IBrush brush, double size)
         => c.DrawText(new FormattedText(value, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter"), size, brush), p);
     private static double Distance(Point a, Point b) => Math.Sqrt(Math.Pow(a.X - b.X, 2) + Math.Pow(a.Y - b.Y, 2));
@@ -29,18 +38,23 @@ public sealed class RegionMapControl : Control
         base.OnPointerPressed(e);
         if (Region is null) return;
         var p = e.GetPosition(this);
+        var cell = new RegionPoint((int)Math.Floor((p.X - Offset.X) / Scale), (int)Math.Floor((p.Y - Offset.Y) / Scale));
+        if (!Region.Contains(cell)) return;
+        SelectedCell = cell;
         var selected = Region.Sites.OrderBy(s => Distance(ParcelCenter(s.Parcel), p)).FirstOrDefault();
-        if (selected is not null && Distance(ParcelCenter(selected.Parcel), p) <= Math.Max(8, Scale))
-        { SelectedSite = selected.LocationId; SiteClicked?.Invoke(selected.LocationId); e.Handled = true; }
+        if (selected is not null && Distance(ParcelCenter(selected.Parcel), p) <= Math.Max(3, Scale * .6))
+        { SelectedCell = selected.Parcel; SelectedSite = selected.LocationId; SiteClicked?.Invoke(selected.LocationId); }
+        else { SelectedSite = null; CellClicked?.Invoke(cell); }
+        InvalidateVisual(); e.Handled = true;
     }
     public override void Render(DrawingContext context)
     {
-        base.Render(context); context.FillRectangle(Ink, new Rect(Bounds.Size));
+        base.Render(context); using var clip = context.PushClip(new Rect(Bounds.Size)); context.FillRectangle(Ink, new Rect(Bounds.Size));
         if (Region is not { } region) { Text(context, "This save has no generated geography.", new(24, 24), Brushes.White, 13); return; }
+        _cellColors ??= region.Cells.Select(c => Brush(RegionPalette.Color(c, Layer))).ToArray();
         for (int y = 0; y < region.Height; y++) for (int x = 0; x < region.Width; x++)
         {
-            var cell = region.Cell(new(x, y));
-            context.FillRectangle(cell.Terrain == RegionalTerrain.River ? River : Districts[cell.District], new Rect(Offset.X + x * Scale, Offset.Y + y * Scale, Scale + .1, Scale + .1));
+            context.FillRectangle(_cellColors[y * region.Width + x], new Rect(Offset.X + x * Scale, Offset.Y + y * Scale, Scale + .1, Scale + .1));
         }
         var roadPoints = region.Roads.Select(r => r.Point).ToHashSet();
         foreach (var road in region.Roads)
@@ -63,12 +77,19 @@ public sealed class RegionMapControl : Control
             double size = Math.Max(4, Scale * .85);
             var rect = new Rect(center.X - size / 2, center.Y - size / 2, size, size);
             context.DrawRectangle(selected ? Gold : Ink, new Pen(highlighted ? Brushes.White : Roads, selected ? 2 : .6), rect);
-            if (highlighted && Scale >= 5) Text(context, type.Symbol, rect.TopLeft + new Vector(.5, -.5), selected ? Ink : Brushes.White, Math.Max(5, Scale * .62));
+            if (highlighted && (Scale >= 6 || HighlightType is not null)) Text(context, type.Symbol, rect.TopLeft + new Vector(.5, -.5), selected ? Ink : Brushes.White, Math.Max(5, Scale * .62));
         }
+        foreach (var center in region.Centers)
+        {
+            var p = ParcelCenter(center.Point);
+            Text(context, center.Name, p + new Vector(5, -14), Brushes.White, center.Role == SettlementRole.Suburb ? 9 : 11);
+        }
+        if (SelectedCell is { } selectedCell)
+        { var p = ParcelCenter(selectedCell); context.DrawRectangle(null, new Pen(Gold, 1.5), new Rect(p.X - Scale / 2, p.Y - Scale / 2, Scale, Scale)); }
         context.DrawEllipse(Gold, new Pen(Ink, 2), ParcelCenter(region.Compound), 6, 6);
-        Text(context, "N ↑", new(Offset.X, Math.Max(0, Offset.Y - 20)), Brushes.White, 12);
-        var start = new Point(Offset.X, Math.Min(Bounds.Height - 17, Offset.Y + region.Height * Scale + 12));
-        context.DrawLine(new Pen(Brushes.White, 2), start, start + new Vector(1000.0 / region.CellMeters * Scale, 0));
-        Text(context, "1 km   ·   gold: compound, bridges and selected route", start + new Vector(0, 3), Brushes.White, 10);
+        Text(context, "N ↑", new(12, 8), Brushes.White, 12);
+        var start = new Point(12, Bounds.Height - 24);
+        context.DrawLine(new Pen(Brushes.White, 2), start, start + new Vector((_zoom > 2 ? 200.0 : 1000.0) / region.CellMeters * Scale, 0));
+        Text(context, (_zoom > 2 ? "200 m" : "1 km") + "   ·   gold: compound, bridges and selected route", start + new Vector(0, 3), Brushes.White, 10);
     }
 }

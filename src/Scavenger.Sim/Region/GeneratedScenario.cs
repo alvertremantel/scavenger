@@ -10,10 +10,10 @@ namespace Scavenger.Sim.Region;
 public static class GeneratedScenario
 {
     public const ulong DefaultSeed = 20260929;
-    public static (World World, Scheduler Scheduler, EventCatalogue Catalogue) Create(ulong seed = DefaultSeed)
+    public static (World World, Scheduler Scheduler, EventCatalogue Catalogue) Create(ulong seed = DefaultSeed, SettlementMotif? motif = null, bool legacy = false)
     {
         var (world, scheduler, catalogue) = ScavengingScenario.Create(seed);
-        var generated = RegionGenerator.Generate(seed, world.Clock.Time.TicksPerDay);
+        var generated = legacy ? RegionGenerator.GenerateLegacy(seed, world.Clock.Time.TicksPerDay) : RegionGenerator.Generate(seed, world.Clock.Time.TicksPerDay, motif);
         RegionalContent.AddMaterials(world.Module<InventoryModule>());
         var scavenging = new ScavengingModule();
         foreach (var location in generated.Locations) scavenging.AddLocation(location);

@@ -241,3 +241,15 @@ require structural restoration, scouting or negotiation to access them. The regi
 is a layer above compound construction, not a substitute for detailed building
 interiors. See [generated worlds](WORLD-GENERATION.md) for implementation, authored
 yields, explicit accessibility guarantees and deferred systems.
+
+
+## Expanded landscape and mixed parcels
+
+The current generator covers about fifty square miles with a compact, avenue-led or
+twin-center main town and two or three outlying suburbs. Regional cells retain terrain
+percentages from 16 m sampling inside 80 m parcels, together with elevation, moisture,
+flood susceptibility and roughness. Rivers, lakes, marsh, woodland, meadow, hills, rock,
+scrub, cultivation and developed ground provide a basis for later washed-out routes,
+off-road scavenging and specialized mobility/kit. Those task rules are still future
+work; all current sites remain accessible by connected roads. See
+[expanded geography](EXPANDED-GEOGRAPHY.md) for provisional placement and sampling rules.
