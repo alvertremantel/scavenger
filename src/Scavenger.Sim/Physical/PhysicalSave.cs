@@ -23,6 +23,7 @@ public static class PhysicalSave
         registry.RegisterCommand<HaulRequest>(QueuePhysicalHaulCommand.Persist, s => new QueuePhysicalHaulCommand(s));
         registry.RegisterCommand<StoreTransferPlan>(StoreTransferCommand.Persist, s => new StoreTransferCommand(s));
         Industry.IndustrySave.RegisterAll(registry);
+        Scavenging.ScavengingSave.RegisterAll(registry);
         return registry;
     }
     public static Scheduler Load(string json)
@@ -31,7 +32,7 @@ public static class PhysicalSave
         ValidateWorld(loaded.World);
         // Industry services describe the completed energy interval; the next preparation derives fresh budgets.
         if (!loaded.World.Has<Industry.EnergyModule>()) UtilitySystem.Recalculate(loaded.World);
-        return new Scheduler(loaded.World, loaded.World.Has<Industry.ProductionModule>() ? Industry.IndustrialScenario.Systems() : PhysicalCompoundScenario.Systems(), loaded.CommandLog);
+        return new Scheduler(loaded.World, loaded.World.Has<Scavenging.ScavengingModule>() ? Scavenging.ScavengingScenario.Systems() : loaded.World.Has<Industry.ProductionModule>() ? Industry.IndustrialScenario.Systems() : PhysicalCompoundScenario.Systems(), loaded.CommandLog);
     }
     private static void CheckVersion(int version)
     { if (version != 1) throw new NotSupportedException($"Unsupported physical compound schema {version}."); }
@@ -128,5 +129,6 @@ public static class PhysicalSave
             if (!construction.Jobs.Any(j => j.Active && j.Owner == reservation.Owner && j.Request.BuilderId == reservation.StaffId))
                 throw new InvalidOperationException("Orphaned construction labor claim.");
         if (world.Has<Industry.ProductionModule>()) Industry.IndustrySave.Validate(world);
+        if (world.Has<Scavenging.ScavengingModule>()) Scavenging.ScavengingSave.Validate(world);
     }
 }

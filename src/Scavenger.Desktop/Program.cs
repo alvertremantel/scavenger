@@ -18,13 +18,13 @@ public static class Program
             if (args[i] == "--walkthrough") { walkthrough = true; continue; }
             if (args[i] == "--ticks" && i + 1 < args.Length && int.TryParse(args[++i], out ticks) && ticks is >= 0 and <= 100000) continue;
             if (args[i] == "--view" && i + 1 < args.Length)
-            { view = Array.IndexOf(new[] { "production", "hardware", "archives", "compute", "energy" }, args[++i]); if (view >= 0) continue; }
+            { view = Array.IndexOf(new[] { "production", "hardware", "archives", "compute", "energy", "scavenging" }, args[++i]); if (view >= 0) continue; }
             return Usage();
         }
         using var session = HeadlessUnitTestSession.StartNew(typeof(RenderAppBuilder));
         session.Dispatch(() =>
         {
-            var window = new MainWindow();
+            var window = new MainWindow(regional: !walkthrough);
             window.Show();
             if (walkthrough)
             {
@@ -32,7 +32,8 @@ public static class Program
                 window.Session.Advance(0);
             }
             else if (ticks > 0) { window.Session.BeginDemo(); if (ticks > 1) window.Session.Advance(ticks - 1); }
-            window.Industry.Tabs.SelectedIndex = view; window.UpdateLayout();
+            if (view == 5) window.OperationsTabs.SelectedIndex = 0;
+            else { window.OperationsTabs.SelectedIndex = 1; window.Industry.Tabs.SelectedIndex = view; } window.UpdateLayout();
             using var frame = window.CaptureRenderedFrame() ?? throw new InvalidOperationException("No rendered frame.");
             string path = Path.GetFullPath(args[1]);
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -43,6 +44,6 @@ public static class Program
         return 0;
     }
     private static int Usage()
-    { Console.Error.WriteLine("Usage: Scavenger.Desktop [--screenshot path.png [--ticks 0..100000] [--view production|hardware|archives|compute|energy] [--walkthrough]]"); return 2; }
+    { Console.Error.WriteLine("Usage: Scavenger.Desktop [--screenshot path.png [--ticks 0..100000] [--view production|hardware|archives|compute|energy|scavenging] [--walkthrough]]"); return 2; }
     public static AppBuilder BuildAvaloniaApp() => AppBuilder.Configure<App>().UsePlatformDetect().WithInterFont();
 }

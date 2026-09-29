@@ -50,7 +50,7 @@ public static class IndustrySave
             bool working = job.Status is ProductionStatus.Walking or ProductionStatus.Processing;
             if (working)
             {
-                ValidateInputs(world, job.Site, recipe.Inputs, job.Owner, allowedStock);
+                ValidateInputs(world, job.Site, recipe.Inputs, job.Owner, allowedStock, recipe.AcceptsInputQuality);
                 if (equipment.OwnerOf(job.Plan.StationId) != job.Owner) throw new InvalidOperationException("Production equipment claim is missing.");
                 if (job.Plan.OperatorId is { } worker) labor.Add(job.Owner, (worker, job.Plan.StationId));
             }
@@ -177,6 +177,9 @@ public static class IndustrySave
                 || inventory.FindStockpile(order.Plan.Template.ProductStoreId) is null) throw new InvalidOperationException("Invalid standing order.");
         foreach (var job in world.Module<ConstructionModule>().Jobs.Where(j => j.Status is ConstructionStatus.WalkingToSite or ConstructionStatus.Building && j.Request.RepairTargetId is not null))
             labor.Add(job.Owner, (job.Request.BuilderId, job.Request.RepairTargetId!));
+        if (world.TryModule<Scavenging.ScavengingModule>(out var scavenging))
+            foreach (var treatment in scavenging.Treatments.Where(t => t.Active && t.DoseClaim is not null))
+                labor.Add(treatment.Owner, (treatment.Plan.MedicId, "clinic-station"));
         foreach (var (owner, claim) in labor)
             if (workforce.ReservationFor(claim.Worker) != owner || world.Module<ProjectBoardModule>().IsAssigned(claim.Worker)
                 || equipment.OwnerOf(claim.Station) != owner) throw new InvalidOperationException("Industrial labor or access claim is inconsistent.");
@@ -198,14 +201,14 @@ public static class IndustrySave
     private static bool IndustryOwner(string owner) => owner.StartsWith("scavenger.process/", StringComparison.Ordinal) || owner.StartsWith("scavenger.computer/", StringComparison.Ordinal);
     private static void Capacity(InventoryModule inventory, string owner, string store, decimal quantity, HashSet<string> valid)
     { if (inventory.CapacityReservedBy(owner) is not { } claim || claim.StockpileId != store || claim.QuantityKg != quantity || !valid.Add(owner)) throw new InvalidOperationException("Output capacity promise is inconsistent."); }
-    private static void ValidateInputs(World world, Worksite site, IReadOnlyList<MaterialRequirement> requirements, string owner, HashSet<string> valid)
+    private static void ValidateInputs(World world, Worksite site, IReadOnlyList<MaterialRequirement> requirements, string owner, HashSet<string> valid, Func<MaterialBatch, bool>? accepts = null)
     {
         var inventory = world.Module<InventoryModule>(); var totals = new Dictionary<string, decimal>(StringComparer.Ordinal);
         foreach (string input in site.InputOwners)
         {
             var claim = inventory.StockReservedBy(input); var batch = claim is null ? null : inventory.FindBatch(claim.BatchId);
             if (batch is null || batch.StockpileId != site.LocalStoreId || !input.StartsWith(owner + "/input/", StringComparison.Ordinal)
-                || !requirements.Any(r => r.MaterialId == batch.MaterialId && batch.Quality.Purity >= r.MinimumPurity) || !valid.Add(input)) throw new InvalidOperationException("Invalid local industrial input claim.");
+                || !requirements.Any(r => r.MaterialId == batch.MaterialId && batch.Quality.Purity >= r.MinimumPurity) || !(accepts?.Invoke(batch) ?? true) || !valid.Add(input)) throw new InvalidOperationException("Invalid local industrial input claim.");
             totals[batch.MaterialId] = totals.GetValueOrDefault(batch.MaterialId) + claim!.QuantityKg;
         }
         if (requirements.Any(r => totals.GetValueOrDefault(r.MaterialId) != r.QuantityKg) || totals.Keys.Any(k => !requirements.Any(r => r.MaterialId == k))) throw new InvalidOperationException("Industrial inputs are incomplete or excessive.");

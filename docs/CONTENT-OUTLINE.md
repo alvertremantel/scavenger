@@ -207,3 +207,20 @@ recover a batch from a salvage location; deliver it to a bounded workshop store;
 its quality; pause transparently on a closed route; save/load during transit; continue
 to the same result. Conservation counts store stock plus in-transit cargo. The first
 slice does not claim to implement chemistry, survival consumption, or a playable UI.
+
+
+## Disease backdrop and authored scavenging region (September 2026 revision)
+
+The working direction now favors a disease-like collapse with surviving useful goods,
+decaying buildings and competition over remaining stocks. Keep the pathogen and cause
+unsettled. Early chemistry-for-medicine should combine a short pharmacy/hardware chain
+with meaningful purity, contamination and provenance gates. The current fictional
+treatment is a prototype for that progression, not a settled real chemical mechanism.
+
+Expeditions now provide location-specific finite salvage, exclusive teams, physical
+departure/unloading, regional travel, field decisions, recall and persistent exposure.
+The authored initial region separates laboratory borosilicate, ordinary domestic glass,
+pharmacy formulations, hardware repair materials and a computer shop's individual
+parts/offline carrier. This establishes data/rules reusable by either an authored or
+generated world. See [the plan](SCAVENGING-PLAN.md) and
+[implementation, yields and unresolved choices](SCAVENGING.md).

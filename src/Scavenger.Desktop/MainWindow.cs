@@ -21,13 +21,17 @@ public sealed class MainWindow : Window
     private readonly Button _run;
     private CellPosition? _roomCorner;
     private int _roomId;
-    public GameSession Session { get; } = new();
+    public GameSession Session { get; }
+    public ScavengingPanel Scavenging { get; }
     public IndustryPanel Industry { get; }
     public CompoundMapControl Map { get; } = new() { Name = "CompoundMap", MinHeight = 320 };
+    public TabControl OperationsTabs { get; } = new() { Name = "OperationsTabs" };
     public ComboBox ToolSelector { get; } = new() { Name = "MapTool", MinWidth = 165 };
     public string SavePath { get; set; } = Path.Combine(Environment.CurrentDirectory, "saves", "compound.json");
-    public MainWindow()
+    public MainWindow(bool regional = true)
     {
+        Session = new GameSession(regional);
+        Scavenging = new ScavengingPanel(Session);
         Title = "Scavenger · Compound operations";
         Industry = new IndustryPanel(Session);
         Width = 1440; Height = 1000; MinWidth = 1050; MinHeight = 780;
@@ -36,7 +40,7 @@ public sealed class MainWindow : Window
         var heading = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         var title = new StackPanel { Spacing = 4 };
         title.Children.Add(Label("COMPOUND OPERATIONS", 24));
-        title.Children.Add(Label("Prototype / recovery chains, scavenged computing & compound construction", 12, "#9DB2BD"));
+        title.Children.Add(Label("Prototype / expeditions, medicine, recovery chains & compound construction", 12, "#9DB2BD"));
         heading.Children.Add(title);
         var figures = new StackPanel { HorizontalAlignment = HorizontalAlignment.Right, Spacing = 4 };
         figures.Children.Add(_clock); figures.Children.Add(_mass); Add(heading, figures, 0, 1);
@@ -73,7 +77,7 @@ public sealed class MainWindow : Window
         tools.Children.Add(Label("Click to place · right-click to inspect · room zones use two corners", 11, "#9DB2BD"));
         Add(shell, tools, 2);
 
-        var workspace = new Grid { RowDefinitions = new RowDefinitions("3*,2*"), RowSpacing = 14 };
+        var workspace = new Grid { RowDefinitions = new RowDefinitions(regional ? "2*,3*" : "3*,2*"), RowSpacing = 14 };
         var mapRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,300"), ColumnSpacing = 16 };
         var mapPanel = new Border { CornerRadius = new CornerRadius(8), ClipToBounds = true, Child = Map };
         mapRow.Children.Add(mapPanel);
@@ -86,7 +90,8 @@ public sealed class MainWindow : Window
         details.Children.Add(Label("1 Mira / mechanics, electronics, computing\n2 Ivo / hauling\n3 Noor / construction\n4 Anya / medicine, chemistry\n\nGold: power · blue: water · violet: data\nDotted lines: intended walking paths\nDashed footprints: construction sites\nSmall box: carried cargo", 12, "#A8BCC6"));
         Add(mapRow, new ScrollViewer { Content = details }, 0, 1);
         workspace.Children.Add(mapRow);
-        var tabs = new TabControl { Name = "OperationsTabs" };
+        var tabs = OperationsTabs;
+        tabs.Items.Add(new TabItem { Header = "Scavenging", Name = "ScavengingTab", Content = Scavenging });
         tabs.Items.Add(new TabItem { Header = "Industry", Name = "IndustryTab", Content = Industry });
         foreach (string name in new[] { "Materials", "Stores", "Workers", "Jobs", "Services", "Events" })
         {
@@ -94,6 +99,7 @@ public sealed class MainWindow : Window
             _tables.Add(name, rows);
             tabs.Items.Add(new TabItem { Header = name, Content = new ScrollViewer { Content = rows, Margin = new Thickness(0, 8, 0, 0) } });
         }
+        tabs.SelectedIndex = regional ? 0 : 1;
         Add(workspace, tabs, 1); Add(shell, workspace, 3);
         _status.TextWrapping = TextWrapping.Wrap; _status.Foreground = new SolidColorBrush(Color.Parse("#C4D7DC"));
         Add(shell, _status, 4);
@@ -149,7 +155,7 @@ public sealed class MainWindow : Window
         Table("Stores", ["Store", "Location", "Stored kg", "Incoming kg", "Free / capacity kg"], "3*,*,*,*,2*",
             report.Inventory.Stores.Select(s => new[] { s.Name, $"{s.Position?.X},{s.Position?.Y}", $"{s.StoredKg:0.##}", $"{s.IncomingKg:0.##}", $"{s.FreeKg:0.##} / {s.CapacityKg:0.##}" }));
         Table("Workers", ["Worker", "Cell", "Assignment / cargo", "Skills", "Activity / blocker"], "*,*,2*,3*,3*",
-            report.Workers.Select(w => new[] { $"{w.Id} {w.Name}", $"{w.Position.X},{w.Position.Y}", $"{w.Assignment ?? "Idle"}{(w.Carrying ? $" / {w.CargoKg} kg" : "")}", string.Join(", ", w.Skills.Select(s => $"{s.Key} {s.Value}")), w.WorkReason ?? (w.Assignment is null ? "Available" : "Working / travelling") }));
+            report.Workers.Select(w => new[] { $"{w.Id} {w.Name}", w.Away ? "Regional expedition" : $"{w.Position.X},{w.Position.Y}", $"{w.Assignment ?? "Idle"}{(w.Carrying ? $" / {w.CargoKg} kg" : "")}", string.Join(", ", w.Skills.Select(s => $"{s.Key} {s.Value}")), w.WorkReason ?? (w.Assignment is null ? "Available" : "Working / travelling") }));
         Table("Jobs", ["Job", "Type", "State", "Progress", "Reason"], "2*,*,*,*,3*",
             report.Construction.Select(j => new[] { j.Id, j.IsRepair ? "Repair" : j.Name, j.Status.ToString(), $"{j.CompletedEffort:0.##} / {j.RequiredEffort}", j.BlockedReason ?? "—" })
                 .Concat(report.Inventory.Hauls.Select(h => new[] { h.Id, $"Haul {h.QuantityKg} kg", h.Status.ToString(), $"{h.ElapsedTicks} steps", h.BlockedReason ?? "—" }))
@@ -160,6 +166,7 @@ public sealed class MainWindow : Window
         var events = _tables["Events"]; events.Children.Clear();
         foreach (string entry in report.RecentEvents.Reverse()) events.Children.Add(Label(entry, 12));
         Industry.Refresh();
+        Scavenging.Refresh();
         UpdateInspector();
     }
     private void Table(string name, string[] headings, string widths, IEnumerable<string[]> data)

@@ -59,14 +59,14 @@ public sealed class ProductionModule : IPersistentModule
             if (job.Status == ProductionStatus.Delivering) { DispatchProducts(world, job, events); continue; }
             if (job.Status != ProductionStatus.WaitingForInputs) continue;
             var recipe = Recipe(job.Plan.RecipeId)!;
-            string? reason = WorksiteLogistics.DeliverInputs(world, job.Site, recipe.Inputs, events);
-            if (!WorksiteLogistics.Ready(world, job.Site, recipe.Inputs)) { Block(world, job, reason, events); continue; }
+            string? reason = WorksiteLogistics.DeliverInputs(world, job.Site, recipe.Inputs, events, recipe.AcceptsInputQuality);
+            if (!WorksiteLogistics.Ready(world, job.Site, recipe.Inputs, recipe.AcceptsInputQuality)) { Block(world, job, reason, events); continue; }
             if (job.Plan.Automatic && !world.Module<ComputingModule>().CanControl(world, job.Plan.StationId)) reason = "Verified control computer, data link, sensor and actuator are required.";
             else if (job.Plan.OperatorId is { } worker) reason = WorksiteLogistics.ExplainLabor(world, worker, recipe.Qualification);
             else reason = null;
             if (reason is null && world.Module<EquipmentModule>().OwnerOf(job.Plan.StationId) is not null) reason = "Processing equipment is claimed by another job.";
             if (reason is not null) { Block(world, job, reason, events); continue; }
-            WorksiteLogistics.ReserveInputs(world, job.Site, recipe.Inputs, job.Owner);
+            WorksiteLogistics.ReserveInputs(world, job.Site, recipe.Inputs, job.Owner, recipe.AcceptsInputQuality);
             var products = CreateProducts(world, job);
             var inventory = world.Module<InventoryModule>(); var acquired = new List<string>();
             bool capacity = true;

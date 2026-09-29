@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using System.Collections.ObjectModel;
 using Haldane.CareerSim.Work;
 using Haldane.SupplyChain;
 using Scavenger.Sim.Physical;
@@ -11,7 +12,7 @@ public sealed record RecipeDefinition
     [JsonConstructor]
     public RecipeDefinition(string id, string name, string capability, SkillRequirement qualification,
         IReadOnlyList<MaterialRequirement> inputs, IReadOnlyList<ProductSpec> outputs, decimal effort,
-        decimal powerKw, decimal waterLph = 0, decimal wearPerTick = .0005m, bool automatable = false)
+        decimal powerKw, decimal waterLph = 0, decimal wearPerTick = .0005m, bool automatable = false, IReadOnlyDictionary<string, string>? inputGrades = null, bool rejectContaminatedInputs = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id); ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentException.ThrowIfNullOrWhiteSpace(capability); ArgumentNullException.ThrowIfNull(qualification);
@@ -23,10 +24,18 @@ public sealed record RecipeDefinition
             || inputs.Sum(i => i.QuantityKg) != outputs.Sum(o => o.QuantityKg)
             || effort <= 0 || powerKw < 0 || waterLph < 0 || wearPerTick is < 0 or > 1)
             throw new ArgumentException("Invalid recipe, quality policy, or mass balance.");
+        if (inputGrades is not null && inputGrades.Any(g => !inputs.Any(i => i.MaterialId == g.Key) || string.IsNullOrWhiteSpace(g.Value)))
+            throw new ArgumentException("Quality grade gates must refer to recipe inputs.");
+        RejectContaminatedInputs = rejectContaminatedInputs;
+        InputGrades = new ReadOnlyDictionary<string, string>((inputGrades ?? new Dictionary<string, string>()).ToDictionary(g => g.Key, g => g.Value, StringComparer.Ordinal));
         Id = id; Name = name; Capability = capability; Qualification = qualification;
         Inputs = Array.AsReadOnly(inputs.ToArray()); Outputs = Array.AsReadOnly(outputs.ToArray());
         Effort = effort; PowerKw = powerKw; WaterLph = waterLph; WearPerTick = wearPerTick; Automatable = automatable;
     }
+    public IReadOnlyDictionary<string, string> InputGrades { get; }
+    public bool RejectContaminatedInputs { get; }
+    public bool AcceptsInputQuality(MaterialBatch b) => (!InputGrades.TryGetValue(b.MaterialId, out var grade) || b.Quality.Grade == grade)
+        && (!RejectContaminatedInputs || b.Quality.Contaminants.Count == 0);
     public string Id { get; }
     public string Name { get; }
     public string Capability { get; }

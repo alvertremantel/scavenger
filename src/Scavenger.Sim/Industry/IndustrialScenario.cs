@@ -12,9 +12,9 @@ public static class IndustrialScenario
 {
     public static readonly IReadOnlyList<string> StarterKit = Array.AsReadOnly(new[]
         { "board-a", "cpu-a", "ram-a", "ram-b", "ssd-a", "psu-a", "gpu-3060", "fan-a" });
-    public static (World World, Scheduler Scheduler, EventCatalogue Catalogue) Create(ulong seed = 20260929)
+    public static (World World, Scheduler Scheduler, EventCatalogue Catalogue) Create(ulong seed = 20260929, bool seedComputers = true, bool leanSupplies = false)
     {
-        var (physical, _, _) = PhysicalCompoundScenario.Create(seed);
+        var (physical, _, _) = PhysicalCompoundScenario.Create(seed, leanSupplies);
         var world = new World(new Clock(new TimeConfig(96)), physical.Rng);
         foreach (var module in physical.Modules) world.Register(module);
         var roster = new WorkforceModule();
@@ -34,9 +34,9 @@ public static class IndustrialScenario
         inventory.AddStockpile(new Stockpile("waste", "Waste and byproduct store", 200, new CellPosition(6, 14)))
             .AddStockpile(new Stockpile("electronics-cache", "Unexamined electronics cache", 50, new CellPosition(2, 12)))
             .AddStockpile(new Stockpile("generator-tank", "Generator fuel tank", 100, new CellPosition(7, 10)));
-        inventory.AddBatch(new MaterialBatch("process-water", "water.clean", "salvage", 20, new BatchQuality(1, "process water / not medical")))
-            .AddBatch(new MaterialBatch("depot-diesel", "fuel.diesel", "salvage", 40, new BatchQuality(.99m, "generator fuel")))
-            .AddBatch(new MaterialBatch("tank-diesel", "fuel.diesel", "generator-tank", 80, new BatchQuality(.99m, "generator fuel")));
+        inventory.AddBatch(new MaterialBatch("process-water", "water.clean", "salvage", leanSupplies ? 6 : 20, new BatchQuality(1, "process water / not medical")))
+            .AddBatch(new MaterialBatch("depot-diesel", "fuel.diesel", "salvage", leanSupplies ? 8 : 40, new BatchQuality(.99m, "generator fuel")))
+            .AddBatch(new MaterialBatch("tank-diesel", "fuel.diesel", "generator-tank", leanSupplies ? 12 : 80, new BatchQuality(.99m, "generator fuel")));
         foreach (var definition in new[]
         {
             new BuildingDefinition("washer", "Polymer wash/sort station", BuildingKind.Workbench, blocksMovement: true, buildable: false,
@@ -89,7 +89,7 @@ public static class IndustrialScenario
         }
         foreach (var definition in ComponentModels()) computing.AddDefinition(definition);
         computing.AddComputer("rig-1", "computer-rig");
-        foreach (var (id, model, fault) in new[]
+        if (seedComputers) foreach (var (id, model, fault) in new[]
         {
             ("board-a", "board-am4", ComponentFault.None), ("cpu-a", "cpu-am4", ComponentFault.None),
             ("ram-a", "ram-ddr4-16", ComponentFault.None), ("ram-b", "ram-ddr4-16", ComponentFault.None),
@@ -100,7 +100,7 @@ public static class IndustrialScenario
             ("gpu-3060-8", "rtx3060-8", ComponentFault.None), ("cpu-dead", "cpu-am4", ComponentFault.DeadSilicon),
             ("ssd-corrupt", "ssd-sata", ComponentFault.MediaCorruption),
         }) computing.AddComponent(world, id, model, "electronics-cache", fault: fault);
-        foreach (var asset in ArchiveAssets()) computing.AddAsset(asset);
+        if (seedComputers) foreach (var asset in ArchiveAssets()) computing.AddAsset(asset);
         world.Module<LogisticsModule>().AddRoute(new TransportRoute("refuel-generator", "salvage", "generator-tank", 1, 6, new("hauling", 20), usesWorldMovement: true));
         UtilitySystem.Recalculate(world); // Budgets are prepared at the first actual interval; no fuel is spent at world creation.
         PhysicalSave.ValidateWorld(world);
@@ -162,7 +162,7 @@ public static class IndustrialScenario
     public static void QueueRecoveryOrders(Scheduler scheduler)
     {
         if (scheduler.World.Module<OrdersModule>().Orders.Count > 0) return;
-        foreach (var recipe in scheduler.World.Module<ProductionModule>().Recipes)
+        foreach (var recipe in scheduler.World.Module<ProductionModule>().Recipes.Where(r => r.Id is "wash-hdpe" or "dry-hdpe" or "shred-hdpe" or "mould-clips"))
         {
             var primary = recipe.Outputs.First(o => !o.Waste);
             decimal target = recipe.Id == "mould-clips" ? 1.6m : primary.QuantityKg;

@@ -10,7 +10,7 @@ public sealed record BuildingRow(string Id, string Name, BuildingKind Kind, Grid
 public sealed record ConstructionRow(string Id, string Name, CellPosition Origin, CellPosition InteractionCell, GridRect Footprint,
     ConstructionStatus Status, decimal CompletedEffort, decimal RequiredEffort, string? BlockedReason, string StagingId, bool IsRepair);
 public sealed record PhysicalWorkerRow(int Id, string Name, CellPosition Position, string? Assignment, bool Carrying,
-    decimal CargoKg, string? WorkReason, IReadOnlyDictionary<string, int> Skills);
+    decimal CargoKg, string? WorkReason, IReadOnlyDictionary<string, int> Skills, bool Away = false);
 public sealed record TravelPathRow(int WorkerId, CellPosition Target, IReadOnlyList<CellPosition> Cells);
 public sealed record PhysicalProjectRow(string Id, string Name, string? StationId, double CompletedEffort,
     double RequiredEffort, bool Completed, IReadOnlyList<int> WorkerIds, string? BlockedReason);
@@ -47,8 +47,12 @@ public sealed record PhysicalReport(long Tick, int Width, int Height, long Topol
             reason ??= build?.BlockedReason;
             reason ??= world.TryModule<Industry.ProductionModule>(out var production) ? production.Jobs.FirstOrDefault(j => j.Active && j.Owner == workforce.ReservationFor(w.Id))?.BlockedReason : null;
             reason ??= world.TryModule<Industry.ComputingModule>(out var computing) ? computing.Jobs.FirstOrDefault(j => j.Active && j.Owner == workforce.ReservationFor(w.Id))?.BlockedReason : null;
+            var expedition = world.TryModule<Scavenging.ScavengingModule>(out var scavenging) ? scavenging.Expeditions.FirstOrDefault(e => e.Active && e.Plan.Team.Contains(w.Id)) : null;
+            var treatment = scavenging?.Treatments.FirstOrDefault(t => t.Active && (t.Plan.MedicId == w.Id || t.Plan.PatientId == w.Id));
+            reason ??= treatment?.Reason;
+            reason ??= expedition?.Reason ?? (scavenging?.HealthOf(w.Id) is { Sick: true } ? "Ill; clinic care required." : null);
             return new PhysicalWorkerRow(w.Id, w.Name, compound.PositionOf(w.Id)!, workforce.ReservationFor(w.Id) ?? project?.Id,
-                haul?.Cargo is not null, haul?.Cargo?.QuantityKg ?? 0, reason, w.Skills.Ratings);
+                haul?.Cargo is not null, haul?.Cargo?.QuantityKg ?? 0, reason, w.Skills.Ratings, scavenging?.IsAway(w.Id) ?? false);
         }).ToList();
         var construction = world.Module<ConstructionModule>().Jobs.Select(j =>
         {
@@ -58,7 +62,7 @@ public sealed record PhysicalReport(long Tick, int Width, int Height, long Topol
                 j.EffortCompleted, definition.EffortRequired, j.BlockedReason, j.StagingStockpileId, j.Request.RepairTargetId is not null);
         }).ToList();
         var paths = new List<TravelPathRow>();
-        foreach (var worker in workers)
+        foreach (var worker in workers.Where(w => !w.Away))
         {
             var haul = logistics.Jobs.FirstOrDefault(j => j.Active && j.Request.WorkerId == worker.Id);
             CellPosition? target = null;
@@ -80,12 +84,21 @@ public sealed record PhysicalReport(long Tick, int Width, int Height, long Topol
                     && computing.Jobs.FirstOrDefault(j => j.Active && j.Owner == workforce.ReservationFor(worker.Id)) is { } task)
                     target = compound.FindBuilding(task.Site.StationId)?.InteractionCell;
             }
+            if (target is null && world.TryModule<Scavenging.ScavengingModule>(out var scavenging))
+            {
+                var expedition = scavenging.Expeditions.FirstOrDefault(e => e.Active && e.Plan.Team.Contains(worker.Id));
+                if (expedition is not null) target = expedition.Status == Scavenging.ExpeditionStatus.LeavingCompound
+                    ? Scavenging.ScavengingModule.DeparturePoint : world.Module<InventoryModule>().FindStockpile(expedition.Plan.ReceivingStoreId)?.Position;
+                else if (scavenging.Treatments.Any(t => t.Active && t.DoseClaim is not null && (t.Plan.MedicId == worker.Id || t.Plan.PatientId == worker.Id)))
+                    target = compound.FindBuilding("clinic-station")?.InteractionCell;
+            }
             if (target is not null) paths.Add(new TravelPathRow(worker.Id, target, Navigation.FindPath(compound, worker.Position, target)));
         }
         return new PhysicalReport(world.Clock.Tick, compound.Width, compound.Height, compound.TopologyRevision,
             inventoryReport.StoredKg + inventoryReport.InTransitKg + buildings.Sum(b => b.EmbeddedKg)
                 + (world.TryModule<Industry.ComputingModule>(out var computers) ? computers.InstalledMassKg : 0)
-                + (world.TryModule<Industry.EnergyModule>(out var energy) ? energy.SpentFuelKg : 0), inventoryReport,
+                + (world.TryModule<Industry.EnergyModule>(out var energy) ? energy.SpentFuelKg : 0)
+                + (world.TryModule<Scavenging.ScavengingModule>(out var region) ? region.RegionalKg + region.CargoKg + region.RivalRemovedKg + region.SpentSuppliesKg : 0), inventoryReport,
             tiles, buildings, workers, construction, compound.Rooms.Select(compound.InspectRoom).ToList(), utilities.Nodes,
             utilities.Services, world.Events.Entries.TakeLast(30).Select(e => $"[{e.Tick}] {e.Description}").ToList(), paths,
             board.Projects.OrderBy(p => p.Id, StringComparer.Ordinal).Select(p => new PhysicalProjectRow(p.Id, p.Name,

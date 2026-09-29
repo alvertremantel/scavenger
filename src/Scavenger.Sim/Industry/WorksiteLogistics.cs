@@ -65,22 +65,22 @@ public static class WorksiteLogistics
                 new("hauling", 20), usesWorldMovement: true));
         return new Worksite(id, stationId, carrierId, sources, store);
     }
-    public static IEnumerable<MaterialBatch> Suitable(InventoryModule inventory, string store, MaterialRequirement requirement)
-        => inventory.Batches.Where(b => b.StockpileId == store && b.MaterialId == requirement.MaterialId && b.Quality.Purity >= requirement.MinimumPurity);
-    public static bool Ready(World world, Worksite site, IReadOnlyList<MaterialRequirement> requirements)
-        => requirements.All(r => Suitable(world.Module<InventoryModule>(), site.LocalStoreId, r).Sum(b => world.Module<InventoryModule>().AvailableKg(b.Id)) >= r.QuantityKg);
-    public static string? DeliverInputs(World world, Worksite site, IReadOnlyList<MaterialRequirement> requirements, List<GameEvent> events)
+    public static IEnumerable<MaterialBatch> Suitable(InventoryModule inventory, string store, MaterialRequirement requirement, Func<MaterialBatch, bool>? accepts = null)
+        => inventory.Batches.Where(b => b.StockpileId == store && b.MaterialId == requirement.MaterialId && b.Quality.Purity >= requirement.MinimumPurity && (accepts?.Invoke(b) ?? true));
+    public static bool Ready(World world, Worksite site, IReadOnlyList<MaterialRequirement> requirements, Func<MaterialBatch, bool>? accepts = null)
+        => requirements.All(r => Suitable(world.Module<InventoryModule>(), site.LocalStoreId, r, accepts).Sum(b => world.Module<InventoryModule>().AvailableKg(b.Id)) >= r.QuantityKg);
+    public static string? DeliverInputs(World world, Worksite site, IReadOnlyList<MaterialRequirement> requirements, List<GameEvent> events, Func<MaterialBatch, bool>? accepts = null)
     {
         var inventory = world.Module<InventoryModule>(); var logistics = world.Module<LogisticsModule>();
         foreach (var requirement in requirements)
         {
             decimal incoming = site.Deliveries.Select(logistics.FindJob).Where(j => j is { Active: true })
                 .Where(j => (j!.Cargo?.MaterialId ?? inventory.FindBatch(j.Request.BatchId)?.MaterialId) == requirement.MaterialId).Sum(j => j!.Request.QuantityKg);
-            decimal missing = requirement.QuantityKg - incoming - Suitable(inventory, site.LocalStoreId, requirement).Sum(b => inventory.AvailableKg(b.Id));
+            decimal missing = requirement.QuantityKg - incoming - Suitable(inventory, site.LocalStoreId, requirement, accepts).Sum(b => inventory.AvailableKg(b.Id));
             if (missing <= 0) continue;
             for (int sourceIndex = 0; sourceIndex < site.Sources.Count; sourceIndex++)
             {
-                var batch = Suitable(inventory, site.Sources[sourceIndex], requirement).FirstOrDefault(b => inventory.AvailableKg(b.Id) > 0);
+                var batch = Suitable(inventory, site.Sources[sourceIndex], requirement, accepts).FirstOrDefault(b => inventory.AvailableKg(b.Id) > 0);
                 if (batch is null) continue;
                 if (world.TryModule<ComputingModule>(out var computing) && computing.Components.FirstOrDefault(c => c.MaterialId == requirement.MaterialId) is { } unit
                     && (missing != unit.MassKg || inventory.AvailableKg(batch.Id) != unit.MassKg || unit.MassKg > 6))
@@ -92,18 +92,18 @@ public static class WorksiteLogistics
                 events.AddRange(new QueueHaulCommand(request).Execute(world)); site.AddDelivery(id); site.Sequence++;
                 return "Inputs are travelling to the station.";
             }
-            return $"No source has available {requirement.MaterialId} at purity {requirement.MinimumPurity:P0}.";
+            return $"No source has available {requirement.MaterialId} at purity {requirement.MinimumPurity:P0} and the required grade.";
         }
-        return Ready(world, site, requirements) ? null : "Waiting for local inputs.";
+        return Ready(world, site, requirements, accepts) ? null : "Waiting for local inputs.";
     }
-    public static void ReserveInputs(World world, Worksite site, IReadOnlyList<MaterialRequirement> requirements, string owner)
+    public static void ReserveInputs(World world, Worksite site, IReadOnlyList<MaterialRequirement> requirements, string owner, Func<MaterialBatch, bool>? accepts = null)
     {
-        if (!Ready(world, site, requirements)) throw new InvalidOperationException("Inputs are not available locally.");
+        if (!Ready(world, site, requirements, accepts)) throw new InvalidOperationException("Inputs are not available locally.");
         var inventory = world.Module<InventoryModule>(); int index = 0;
         foreach (var requirement in requirements)
         {
             decimal remaining = requirement.QuantityKg;
-            foreach (var batch in Suitable(inventory, site.LocalStoreId, requirement))
+            foreach (var batch in Suitable(inventory, site.LocalStoreId, requirement, accepts))
             {
                 decimal amount = Math.Min(remaining, inventory.AvailableKg(batch.Id)); if (amount <= 0) continue;
                 string claim = $"{owner}/input/{index++}";

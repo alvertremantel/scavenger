@@ -11,7 +11,7 @@ namespace Scavenger.Sim.Physical;
 
 public static class PhysicalCompoundScenario
 {
-    public static (World World, Scheduler Scheduler, EventCatalogue Catalogue) Create(ulong seed = 20260928)
+    public static (World World, Scheduler Scheduler, EventCatalogue Catalogue) Create(ulong seed = 20260928, bool leanSupplies = false)
     {
         var catalogue = CreateCatalogue();
         var compound = new CompoundModule(26, 18);
@@ -27,9 +27,9 @@ public static class PhysicalCompoundScenario
         inventory.AddStockpile(new Stockpile("salvage", "Salvage depot", 400, new CellPosition(2, 4)))
             .AddStockpile(new Stockpile("workshop", "Workshop store", 60, new CellPosition(16, 5)))
             .AddStockpile(new Stockpile("clinic", "Clinic store", 30, new CellPosition(16, 13)));
-        foreach (var (material, quantity) in new[] { ("metal.steel", 50m), ("metal.copper", 10m), ("timber", 40m), ("stone", 80m) })
+        foreach (var (material, quantity) in new[] { ("metal.steel", leanSupplies ? 6m : 50m), ("metal.copper", leanSupplies ? .5m : 10m), ("timber", leanSupplies ? 8m : 40m), ("stone", leanSupplies ? 20m : 80m) })
             inventory.AddBatch(new MaterialBatch($"salvage-{material}", material, "salvage", quantity, new BatchQuality(0.99m, "identified")));
-        inventory.AddBatch(new MaterialBatch("salvage-hdpe", "polymer.hdpe", "salvage", 20,
+        inventory.AddBatch(new MaterialBatch("salvage-hdpe", "polymer.hdpe", "salvage", leanSupplies ? 2 : 20,
             new BatchQuality(0.94m, "unclassified", new Dictionary<string, decimal> { ["soil"] = 0.04m })));
 
         foreach (var fixture in new[]

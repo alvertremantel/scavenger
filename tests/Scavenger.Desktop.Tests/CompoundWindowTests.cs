@@ -9,6 +9,7 @@ using Haldane.SupplyChain;
 using Scavenger.Desktop;
 using Scavenger.Sim.Physical;
 using Scavenger.Sim.Industry;
+using Scavenger.Sim.Scavenging;
 
 [assembly: CollectionBehavior(DisableTestParallelization = true)]
 namespace Scavenger.Desktop.Tests;
@@ -21,7 +22,7 @@ public class CompoundWindowTests
         using var session = HeadlessUnitTestSession.StartNew(typeof(RenderAppBuilder));
         await session.Dispatch(() =>
         {
-            var window = new MainWindow(); window.Show();
+            var window = new MainWindow(regional: false); window.Show();
             try
             {
                 Dispatcher.UIThread.RunJobs();
@@ -58,7 +59,7 @@ public class CompoundWindowTests
         await session.Dispatch(() =>
         {
             string path = Path.Combine(Path.GetTempPath(), $"scavenger-ui-{Guid.NewGuid():N}.json");
-            var window = new MainWindow { SavePath = path }; window.Show();
+            var window = new MainWindow(regional: false) { SavePath = path }; window.Show();
             try
             {
                 foreach (var tool in window.ToolSelector.Items.Cast<MapTool>().Where(t => t.DefinitionId is not null))
@@ -89,7 +90,7 @@ public class CompoundWindowTests
         using var session = HeadlessUnitTestSession.StartNew(typeof(RenderAppBuilder));
         await session.Dispatch(() =>
         {
-            var window = new MainWindow(); window.Show();
+            var window = new MainWindow(regional: false); window.Show();
             try
             {
                 Click(window, Find<Button>(window, "RecoveryOrdersButton"));
@@ -127,6 +128,52 @@ public class CompoundWindowTests
             finally { window.Close(); }
         }, CancellationToken.None);
     }
+    [Fact]
+    public async Task ExpeditionControlsRecoverTwoDestinationsMakeMedicineTreatPatientAndRender()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(RenderAppBuilder));
+        await session.Dispatch(() =>
+        {
+            var window = new MainWindow { Width = 1050, Height = 780 }; window.Show();
+            try
+            {
+                SelectChoice(window, "ExpeditionLocation", "pharmacy");
+                SelectSalvage("stock-sealed", "excipient", "sterile-water");
+                Click(window, Find<Button>(window, "DispatchExpeditionButton"));
+                Assert.Single(window.Session.World.Module<ScavengingModule>().Expeditions);
+                FinishExpeditions();
+                SelectChoice(window, "ExpeditionLocation", "hardware"); SelectSalvage("filter-sorbent");
+                Find<NumericUpDown>(window, "SalvageQuantity").Value = .1m;
+                Click(window, Find<Button>(window, "DispatchExpeditionButton")); FinishExpeditions();
+                Click(window, Find<Button>(window, "RefineMedicineButton"));
+                AdvanceUntil(window, () => window.Session.World.Module<InventoryModule>().Batches.Any(b => b.StockpileId == "clinic" && b.MaterialId == "medicine.refined"));
+                Click(window, Find<Button>(window, "FormulateMedicineButton"));
+                AdvanceUntil(window, () => window.Session.World.Module<InventoryModule>().Batches.Any(b => b.StockpileId == "clinic" && b.MaterialId == "medicine.fever-dose"));
+                Click(window, Find<Button>(window, "TreatPatientButton"));
+                AdvanceUntil(window, () => !window.Session.World.Module<ScavengingModule>().HealthOf(1)!.Sick);
+                PhysicalSave.ValidateWorld(window.Session.World);
+                using var frame = window.CaptureRenderedFrame(); Assert.NotNull(frame);
+                using var bytes = new MemoryStream(); frame.Save(bytes, PngBitmapEncoderOptions.Default); Assert.True(bytes.Length > 15000);
+                void SelectSalvage(params string[] ids)
+                {
+                    var selector = window.Scavenging.SalvageSelector; selector.SelectedItems!.Clear();
+                    foreach (var c in selector.Items.Cast<Choice>().Where(c => ids.Contains(c.Id))) selector.SelectedItems.Add(c);
+                    Dispatcher.UIThread.RunJobs();
+                }
+                void FinishExpeditions()
+                {
+                    for (int i = 0; i < 100 && window.Session.World.Module<ScavengingModule>().Expeditions.Any(e => e.Active); i++)
+                    {
+                        foreach (var e in window.Session.World.Module<ScavengingModule>().Expeditions.Where(e => e.Status == ExpeditionStatus.Decision).ToArray())
+                        { SelectChoice(window, "ActiveExpedition", e.Plan.Id); Click(window, Find<Button>(window, "WaitExpeditionButton")); }
+                        window.Session.Advance(4);
+                    }
+                    Assert.DoesNotContain(window.Session.World.Module<ScavengingModule>().Expeditions, e => e.Active);
+                }
+            }
+            finally { window.Close(); }
+        }, CancellationToken.None);
+    }
     private static void SelectParts(MainWindow window, IEnumerable<string> ids)
     {
         var selector = window.Industry.ComponentSelector; selector.SelectedItems!.Clear();
@@ -139,7 +186,7 @@ public class CompoundWindowTests
         using var session = HeadlessUnitTestSession.StartNew(typeof(RenderAppBuilder));
         await session.Dispatch(() =>
         {
-            var window = new MainWindow { Width = 1050, Height = 780 }; window.Show();
+            var window = new MainWindow(regional: false) { Width = 1050, Height = 780 }; window.Show();
             try
             {
                 window.Industry.Tabs.SelectedIndex = 5;

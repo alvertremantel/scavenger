@@ -6,6 +6,7 @@ using Haldane.CareerSim.Work;
 using Haldane.SupplyChain;
 using Scavenger.Sim.Industry;
 using Scavenger.Sim.Physical;
+using Scavenger.Sim.Scavenging;
 
 namespace Scavenger.Desktop;
 
@@ -101,14 +102,16 @@ public sealed class IndustryPanel : UserControl
     private IReadOnlyList<string> Parts => ComponentSelector.SelectedItems!.Cast<Choice>().Select(c => c.Id).ToArray();
     private void SubmitSelected(ComboBox selector, Func<string, Haldane.Kernel.Simulation.ICommand> command)
     { if (Selected(selector) is { } id) _session.Submit(command(id)); }
+    private ProductionPlan ProcessPlan(string jobId, string recipeId) => recipeId is "refine-fever-stock" or "formulate-fever-dose"
+        ? ScavengingScenario.MedicinePlan(jobId, recipeId) : IndustrialScenario.ProcessPlan(jobId, recipeId, _automatic.IsChecked == true);
     private void QueueProcess()
-    { if (Selected(_recipe) is { } id) _session.Submit(new QueueProductionCommand(IndustrialScenario.ProcessPlan(_session.NextId("process"), id, _automatic.IsChecked == true))); }
+    { if (Selected(_recipe) is { } id) _session.Submit(new QueueProductionCommand(ProcessPlan(_session.NextId("process"), id))); }
     private void MaintainStock()
     {
         if (Selected(_recipe) is not { } id) return;
         var recipe = _session.World.Module<ProductionModule>().Recipe(id)!;
         string orderId = _session.NextId("stock");
-        _session.Submit(new AddStockOrderCommand(new(orderId, IndustrialScenario.ProcessPlan("template", id, _automatic.IsChecked == true), recipe.Outputs.First(o => !o.Waste).MaterialId, _targetKg.Value ?? 1.6m)));
+        _session.Submit(new AddStockOrderCommand(new(orderId, ProcessPlan("template", id), recipe.Outputs.First(o => !o.Waste).MaterialId, _targetKg.Value ?? 1.6m)));
     }
     private void ToggleOrder()
     { if (Selected(_order) is { } id) _session.Submit(new SetStockOrderEnabledCommand(id, !_session.World.Module<OrdersModule>().Find(id)!.Enabled)); }
@@ -165,7 +168,7 @@ public sealed class IndustryPanel : UserControl
         var frame = energy.LastFrame;
         _energy.Text = $"Available diesel {report.FuelAvailableKg:0.00} kg · spent fuel {energy.SpentFuelKg:0.00} kg · battery {energy.Batteries.Sum(b => b.StoredKwh):0.000} / {energy.Batteries.Sum(b => b.Plan.CapacityKwh)} kWh\nLast interval: requested {frame?.RequestedKw ?? 0:0.000} kW / served {frame?.ServedKw ?? 0:0.000} kW · generated {frame?.GeneratedKwh ?? 0:0.000} kWh · used {frame?.UsedKwh ?? 0:0.000} kWh\nLifetime: generated {energy.GeneratedKwh:0.000} kWh · used {energy.UsedKwh:0.000} kWh · conversion losses {energy.LossKwh:0.000} kWh";
         Table("Orders", "2*,2*,*,*,2*", ["Standing order", "Material", "Target kg", "Covered kg", "State"], report.Orders.Select(o => new[] { o.Id, o.Material, $"{o.TargetKg:0.##}", $"{o.CoveredKg:0.##}", o.Enabled ? o.Reason ?? "Maintaining" : "Paused" }));
-        Table("Recipes", "2*,3*,3*,*,*", ["Recipe", "Inputs / purity", "Products + waste", "Effort", "Active kW"], production.Recipes.Select(r => new[] { r.Name, string.Join(" + ", r.Inputs.Select(i => $"{i.QuantityKg} kg {i.MaterialId} ≥{i.MinimumPurity:P0}")), string.Join(" + ", r.Outputs.Select(o => $"{o.QuantityKg} kg {o.MaterialId}")), r.Effort.ToString(), r.PowerKw.ToString() }));
+        Table("Recipes", "2*,3*,3*,*,*", ["Recipe", "Inputs / purity", "Products + waste", "Effort", "Active kW"], production.Recipes.Select(r => new[] { r.Name, string.Join(" + ", r.Inputs.Select(i => $"{i.QuantityKg} kg {i.MaterialId} ≥{i.MinimumPurity:P0}{(r.InputGrades.TryGetValue(i.MaterialId, out var grade) ? $" / {grade}" : "")}{(r.RejectContaminatedInputs ? " / no known contamination" : "")}")), string.Join(" + ", r.Outputs.Select(o => $"{o.QuantityKg} kg {o.MaterialId}")), r.Effort.ToString(), r.PowerKw.ToString() }));
         Table("Production", "2*,*,*,*,3*", ["Batch", "State", "Operator", "Effort", "Blocker / local staging"], production.Jobs.TakeLast(100).Select(j => new[] { j.Plan.Id, j.Status.ToString(), j.Plan.Automatic ? "Controller" : $"Worker {j.Plan.OperatorId}", $"{j.EffortCompleted:0.##}/{production.Recipe(j.Plan.RecipeId)!.Effort}", j.BlockedReason ?? j.Site.LocalStoreId }));
         Table("Components", "*,2*,*,2*,2*", ["Unit", "Part", "Condition", "Location / mass", "Diagnosis / claim"], computing.Components.Select(c => new[] { c.Id, computing.Definition(c.DefinitionId)!.Name, c.Diagnosed ? $"{c.Condition:P0}" : "Unknown", $"{c.InstalledOwner ?? inventory.Batches.FirstOrDefault(b => b.MaterialId == c.MaterialId)?.StockpileId ?? "carried"} / {c.MassKg} kg", $"{(c.Diagnosed ? c.Fault.ToString() : "Unexamined")} {c.ClaimedBy}" }));
         Table("Archives", "2*,*,2*,2*,2*", ["Recovered asset", "GiB", "Dependencies", "Integrity / source", "Installed"], computing.Assets.Select(a => new[] { a.Name, a.SizeGiB.ToString(), string.Join(", ", a.Dependencies), $"{a.Integrity:P0} / {a.SourceMediaId}", computing.Copies.Any(c => c.AssetId == a.Id && machine.Components.Contains(c.StorageId) && c.Verified) ? "Verified on mounted disk" : "Requires copy" }));

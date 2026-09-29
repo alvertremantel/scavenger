@@ -99,7 +99,7 @@ public sealed class CompoundMapControl : Control
         foreach (var path in report.Paths.Where(p => p.Cells.Count > 1))
             for (int i = 1; i < path.Cells.Count; i++)
                 context.DrawLine(new Pen(WorkerColor(path.WorkerId), 1.5, DashStyle.Dot, PenLineCap.Round), CellCenter(path.Cells[i - 1]), CellCenter(path.Cells[i]));
-        foreach (var worker in report.Workers)
+        foreach (var worker in report.Workers.Where(w => !w.Away))
         {
             var center = CellCenter(worker.Position);
             context.DrawEllipse(WorkerColor(worker.Id), new Pen(Brush("#111C24"), 1.5), center, Scale * .27, Scale * .27);
