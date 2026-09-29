@@ -1,0 +1,54 @@
+using System.Globalization;
+using System.Text.Json;
+using Haldane.Kernel.Serialization;
+using Scavenger.Sim;
+using Scavenger.Sim.Physical;
+
+CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+bool json = args.Contains("--json"), roundtrip = args.Contains("--roundtrip"), legacy = args.Contains("--legacy");
+int ticks = legacy ? 8 : 120;
+for (int i = 0; i < args.Length; i++)
+{
+    if (args[i] is "--json" or "--roundtrip" or "--legacy") continue;
+    if (args[i] == "--ticks" && i + 1 < args.Length && int.TryParse(args[++i], out ticks) && ticks is >= 1 and <= 100_000) continue;
+    Console.Error.WriteLine("Usage: dotnet run --project src/Scavenger.Cli -- [--json] [--roundtrip] [--ticks N] [--legacy]");
+    return 2;
+}
+var (_, scheduler, _) = legacy ? CompoundScenario.Create() : PhysicalCompoundScenario.Create();
+if (!json) Console.WriteLine(legacy ? "Timed logistics experiment.\n" : "Physical compound: walking, door access, construction deliveries, and workstation utilities.\n");
+for (int step = 0; step < ticks; step++)
+{
+    if (legacy) CompoundScenario.QueueDemoCommands(scheduler);
+    else PhysicalCompoundScenario.QueueDemoCommands(scheduler);
+    var events = scheduler.Advance();
+    if (!json)
+        foreach (var gameEvent in events)
+            Console.WriteLine($"[{gameEvent.Tick,2}] {gameEvent.Description}");
+    if (roundtrip && step == (legacy ? 1 : 10))
+    {
+        string saved = SaveManager.Save(scheduler, "Compound in progress");
+        scheduler = legacy ? CompoundScenario.Load(saved) : PhysicalSave.Load(saved);
+        if (!json) Console.WriteLine("     Saved and reloaded the running compound.");
+    }
+}
+var report = CompoundReport.Capture(scheduler.World);
+if (json) Console.WriteLine(legacy ? JsonSerializer.Serialize(report, SaveManager.Options)
+    : JsonSerializer.Serialize(PhysicalReport.Capture(scheduler.World), SaveManager.Options));
+else
+{
+    Console.WriteLine($"\nTick {report.Tick}: {report.StoredKg} kg in stores; {report.InTransitKg} kg in transit.");
+    Console.WriteLine($"{"Store",-20} {"Stored kg",10} {"Incoming kg",12} {"Free kg",10}");
+    foreach (var store in report.Stores)
+        Console.WriteLine($"{store.Name,-20} {store.StoredKg,10} {store.IncomingKg,12} {store.FreeKg,10}");
+    foreach (var haul in report.Hauls)
+        Console.WriteLine(legacy ? $"{haul.Id}: {haul.Status}; {haul.ElapsedTicks}/{haul.TravelTicks} travel ticks."
+            : $"{haul.Id}: {haul.Status}; {haul.ElapsedTicks} walking steps (route estimate {haul.TravelTicks}).");
+    if (!legacy)
+    {
+        var physical = PhysicalReport.Capture(scheduler.World);
+        Console.WriteLine($"Total tracked mass, including built structures: {physical.TotalTrackedKg} kg.");
+        foreach (var job in physical.Construction) Console.WriteLine($"{job.Id}: {job.Status}; {job.CompletedEffort}/{job.RequiredEffort} effort.");
+        foreach (var worker in physical.Workers) Console.WriteLine($"{worker.Name}: ({worker.Position.X},{worker.Position.Y}); {worker.Assignment ?? "idle"}.");
+    }
+}
+return 0;

@@ -1,0 +1,10 @@
+# The engine is developed in its own Git checkout.
+/haldane/
+**/bin/
+**/obj/
+**/TestResults/
+*.trx
+.idea/
+.vs/
+/saves/
+/artifacts/

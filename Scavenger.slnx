@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Scavenger.Sim/Scavenger.Sim.csproj" />
+    <Project Path="src/Scavenger.Cli/Scavenger.Cli.csproj" />
+    <Project Path="src/Scavenger.Desktop/Scavenger.Desktop.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Scavenger.Sim.Tests/Scavenger.Sim.Tests.csproj" />
+    <Project Path="tests/Scavenger.Desktop.Tests/Scavenger.Desktop.Tests.csproj" />
+  </Folder>
+</Solution>
