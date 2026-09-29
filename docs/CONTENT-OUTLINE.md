@@ -224,3 +224,20 @@ pharmacy formulations, hardware repair materials and a computer shop's individua
 parts/offline carrier. This establishes data/rules reusable by either an authored or
 generated world. See [the plan](SCAVENGING-PLAN.md) and
 [implementation, yields and unresolved choices](SCAVENGING.md).
+
+
+## Generated regional geography — provisional baseline
+
+The game now starts a seeded town-and-outskirts region: 64 × 64 parcels of 80 m,
+about ten square miles. Commercial, civic, residential and industrial districts
+join farms, woods and a river with explicit connected roads and bridges. Twenty
+authored facility types instantiate different former uses, quantities, surviving
+objects and component faults. Specialist materials remain tied to appropriate
+activities; dry labels, purity and contamination survive generation and recovery.
+
+Every type is present for this experiment, with a nearby intact pharmacy/hardware
+path for the initial fictional illness. Later distributions can omit rare types or
+require structural restoration, scouting or negotiation to access them. The region
+is a layer above compound construction, not a substitute for detailed building
+interiors. See [generated worlds](WORLD-GENERATION.md) for implementation, authored
+yields, explicit accessibility guarantees and deferred systems.

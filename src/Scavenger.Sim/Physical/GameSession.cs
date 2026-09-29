@@ -5,6 +5,7 @@ using Haldane.Kernel.Simulation;
 using Haldane.SupplyChain;
 using Scavenger.Sim.Industry;
 using Scavenger.Sim.Scavenging;
+using Scavenger.Sim.Region;
 
 namespace Scavenger.Sim.Physical;
 
@@ -13,10 +14,13 @@ public sealed record CommandResult(bool Accepted, string Message);
 /// <summary>Framework-independent application boundary. Edits execute at the start of one game tick.</summary>
 public sealed class GameSession
 {
-    private readonly bool _regional;
-    public GameSession(bool regional = true)
+    private bool _regional;
+    private bool _generated;
+    private ulong _seed;
+    public GameSession(bool regional = true, bool generated = true, ulong seed = GeneratedScenario.DefaultSeed)
     {
-        _regional = regional; var (_, scheduler, _) = regional ? ScavengingScenario.Create() : IndustrialScenario.Create(); Scheduler = scheduler;
+        _regional = regional; _generated = regional && generated; _seed = seed;
+        var (_, scheduler, _) = _generated ? GeneratedScenario.Create(seed) : regional ? ScavengingScenario.Create(seed) : IndustrialScenario.Create(seed); Scheduler = scheduler;
         Status = regional ? "Mira is ill. Recover pharmacy stock and hardware sorbent, then prepare clinic treatment. Plan your next expedition under Scavenging."
             : "Plan recovery orders, examine the electronics cache, or build your compound.";
     }
@@ -81,6 +85,8 @@ public sealed class GameSession
     {
         var loaded = PhysicalSave.Load(json);
         Scheduler = loaded;
+        _regional = World.Has<ScavengingModule>(); _generated = World.Has<RegionModule>();
+        _seed = World.Rng.MasterSeed;
         Status = $"Loaded compound at tick {World.Clock.Tick}.";
         Changed?.Invoke();
     }
@@ -95,8 +101,14 @@ public sealed class GameSession
     }
     public void Reset()
     {
-        var (_, scheduler, _) = _regional ? ScavengingScenario.Create() : IndustrialScenario.Create(); Scheduler = scheduler;
+        var (_, scheduler, _) = _generated ? GeneratedScenario.Create(_seed) : _regional ? ScavengingScenario.Create(_seed) : IndustrialScenario.Create(_seed); Scheduler = scheduler;
         Status = "Fresh compound."; Changed?.Invoke();
+    }
+    public void NewRegion(ulong seed)
+    {
+        var (_, scheduler, _) = GeneratedScenario.Create(seed); Scheduler = scheduler; _seed = seed; _regional = true; _generated = true;
+        Status = $"New region: {World.Module<RegionModule>().Name}, seed {seed}. Mira needs clinic treatment.";
+        Changed?.Invoke();
     }
     public string NextId(string prefix)
     {

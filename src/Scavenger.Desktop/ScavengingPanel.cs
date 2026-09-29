@@ -98,6 +98,8 @@ public sealed class ScavengingPanel : UserControl
             && module.Treatments.FirstOrDefault(t => t.Active && t.Plan.PatientId == int.Parse(id)) is { } treatment)
             _session.Submit(new CancelTreatmentCommand(treatment.Plan.Id));
     }
+    public void SelectLocation(string id)
+    { _location.SelectedItem = _location.Items.Cast<Choice>().FirstOrDefault(c => c.Id == id); }
     public void Refresh()
     {
         if (_refreshing) return;
@@ -107,7 +109,7 @@ public sealed class ScavengingPanel : UserControl
         if (!_session.World.TryModule<ScavengingModule>(out var module))
         { IsEnabled = false; _description.Text = "This save uses the earlier compound fixture. Reset starts the configured scenario."; return; }
         IsEnabled = true;
-        if (!_location.Items.Cast<Choice>().Select(c => c.Id).Order().SequenceEqual(module.Locations.Select(l => l.Definition.Id).Order())) Choices(_location, module.Locations.OrderBy(l => l.Definition.Id == "pharmacy" ? 0 : 1).Select(l => new Choice(l.Definition.Id, l.Definition.Name)));
+        if (!_location.Items.Cast<Choice>().Select(c => c.Id).Order().SequenceEqual(module.Locations.Select(l => l.Definition.Id).Order())) Choices(_location, module.Locations.OrderBy(l => l.Definition.Id.StartsWith("pharmacy", StringComparison.Ordinal) ? 0 : 1).ThenBy(l => l.Definition.TravelTicks).Select(l => new Choice(l.Definition.Id, l.Definition.Name)));
         if (TeamSelector.Items.Count != module.Health.Count)
         {
             TeamSelector.ItemsSource = module.Health.Select(h => new Choice(h.WorkerId.ToString(), $"{h.WorkerId} {_session.World.Module<WorkforceModule>().Find(h.WorkerId)!.Name}")).ToArray();

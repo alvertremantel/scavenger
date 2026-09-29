@@ -8,7 +8,8 @@ The prototype combines operational tables with a physical 2D compound in Avaloni
 [Physical implementation plan](docs/PHYSICAL-COMPOUND-PLAN.md) · [Physical implementation and verification](docs/PHYSICAL-COMPOUND.md) ·
 [Production/computing plan](docs/PRODUCTION-AND-COMPUTING-PLAN.md) ·
 [Industrial walkthrough and audit](docs/PRODUCTION-AND-COMPUTING.md) ·
-[Scavenging plan](docs/SCAVENGING-PLAN.md) · [Expeditions and location yields](docs/SCAVENGING.md)
+[Scavenging plan](docs/SCAVENGING-PLAN.md) · [Expeditions and location yields](docs/SCAVENGING.md) ·
+[World-generation plan](docs/WORLD-GENERATION-PLAN.md) · [Generated worlds](docs/WORLD-GENERATION.md)
 
 ## Layout
 
@@ -25,7 +26,7 @@ The project references that local engine checkout directly. It must be available
 [haldane-revision.txt](haldane-revision.txt); the engine remains a separate repository
 and is not yet packaged for distribution. The pinned engine revision includes the
 `Haldane.SupplyChain/Conversions.cs` primitive required by the industrial slice.
-The game is on `feature/scavenging-expeditions`; the independent engine checkout remains
+Scavenging is merged into `main`; world generation is on `feature/regional-world-generation`; the independent engine checkout remains
 on `feature/production-and-scavenged-computing` at the pinned revision.
 
 ## Run
@@ -35,10 +36,12 @@ Requires the .NET 10 SDK.
 ```sh
 dotnet run --project src/Scavenger.Cli -- --roundtrip
 dotnet run --project src/Scavenger.Cli -- --json
+dotnet run --project src/Scavenger.Cli -- --world --seed 42 --json --map artifacts/world-42.svg
+dotnet run --project src/Scavenger.Cli -- --world --seed 42 --walkthrough --roundtrip --ticks 400
 dotnet run --project src/Scavenger.Cli -- --scavenging --roundtrip --ticks 400
 dotnet run --project src/Scavenger.Cli -- --industry --roundtrip --ticks 2400
 dotnet run --project src/Scavenger.Desktop
-dotnet run --project src/Scavenger.Desktop -- --screenshot artifacts/compound.png --ticks 6
+dotnet run --project src/Scavenger.Desktop -- --screenshot artifacts/region.png --ticks 0 --view region
 dotnet test Scavenger.slnx
 dotnet test haldane/haldane/Haldane.slnx
 ```
@@ -49,8 +52,10 @@ workshop door interrupts hauling; reopening it resumes travel. `--roundtrip` sav
 reloads while blocked. `--json` emits the full physical report; `--ticks N` controls the
 run length. `--legacy` runs the earlier timed transport fixture.
 
-The desktop starts the scavenging scenario with Mira ill, modest starting stores, and
-five finite destinations. Under **Scavenging**, select a team, destination and source
+The desktop starts a seeded **10.12-square-mile region** with twenty authored location types,
+a connected town/river/road layout, varied finite sites, Mira ill and modest starting stores.
+Under **Region**, enter a seed to generate a fresh world, click a site to inspect its stock
+and road route, then use **Plan expedition here**. Under **Compound → Scavenging**, select a team, destination and source
 objects; dispatch, respond to field incidents, recall, and receive actual cargo. Recover
 pharmacy supplies and hardware sorbent, then refine/formulate the fictional treatment
 at the clinic. See [the expedition walkthrough](docs/SCAVENGING.md) for quantities,
@@ -80,6 +85,6 @@ parts, offline assets and knowledge, CPU/RAM/VRAM/storage claims, telemetry and 
 operator-free processing, finite electrical energy/fuel, and deterministic saves/replay.
 Chemistry currently covers HDPE recovery and a deliberately fictional purity/grade-gated
 clinic chain; general reaction/species simulation remains future work.
-Population needs, generated regional geography, faction combat, multiple floors, vehicles, detailed thermal/electrical physics,
+Population needs, scouting/fog of war, road disruption, faction combat, multiple floors, vehicles, detailed thermal/electrical physics,
 board-level repair, actual ML execution and crowd avoidance remain future systems.
 Costs, yields, work rates and workload profiles are experimental gameplay data.

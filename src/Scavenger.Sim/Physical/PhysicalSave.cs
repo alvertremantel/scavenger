@@ -24,6 +24,7 @@ public static class PhysicalSave
         registry.RegisterCommand<StoreTransferPlan>(StoreTransferCommand.Persist, s => new StoreTransferCommand(s));
         Industry.IndustrySave.RegisterAll(registry);
         Scavenging.ScavengingSave.RegisterAll(registry);
+        Region.RegionModule.Register(registry);
         return registry;
     }
     public static Scheduler Load(string json)
@@ -130,5 +131,6 @@ public static class PhysicalSave
                 throw new InvalidOperationException("Orphaned construction labor claim.");
         if (world.Has<Industry.ProductionModule>()) Industry.IndustrySave.Validate(world);
         if (world.Has<Scavenging.ScavengingModule>()) Scavenging.ScavengingSave.Validate(world);
+        if (world.Has<Region.RegionModule>()) Region.RegionModule.Validate(world);
     }
 }
