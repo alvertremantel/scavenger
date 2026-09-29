@@ -13,11 +13,12 @@ public sealed class CompoundMapControl : Control
 {
     private PhysicalReport? _report;
     private CellPosition? _selected;
-    private bool _power = true, _water = true;
+    private bool _power = true, _water = true, _data = true;
     public PhysicalReport? Report { get => _report; set { _report = value; InvalidateVisual(); } }
     public CellPosition? SelectedCell { get => _selected; set { _selected = value; InvalidateVisual(); } }
     public bool ShowPower { get => _power; set { _power = value; InvalidateVisual(); } }
     public bool ShowWater { get => _water; set { _water = value; InvalidateVisual(); } }
+    public bool ShowData { get => _data; set { _data = value; InvalidateVisual(); } }
     public event Action<CellPosition, bool>? CellClicked;
     private double Scale => Report is null ? 1 : Math.Max(1, Math.Min((Bounds.Width - 40) / Report.Width, (Bounds.Height - 40) / Report.Height));
     private Point Offset => Report is null ? default : new((Bounds.Width - Report.Width * Scale) / 2, (Bounds.Height - Report.Height * Scale) / 2);
@@ -64,14 +65,14 @@ public sealed class CompoundMapControl : Control
         {
             var area = AreaRect(room.Area);
             context.DrawRectangle(null, new Pen(Brush("#7BA1AE"), 1), area.Deflate(1));
-            Text(context, room.Name.ToUpperInvariant(), area.TopLeft + new Vector(4, 3), Brush("#A0BCC5"), Math.Clamp(Scale * .32, 8, 12));
+            Text(context, room.Name.ToUpperInvariant(), area.TopLeft + new Vector(4, -Scale * .7), Brush("#A0BCC5"), Math.Clamp(Scale * .32, 8, 12));
         }
         foreach (var kind in Enum.GetValues<UtilityKind>())
         {
-            if ((kind == UtilityKind.Power && !ShowPower) || (kind == UtilityKind.Water && !ShowWater)) continue;
+            if ((kind == UtilityKind.Power && !ShowPower) || (kind == UtilityKind.Water && !ShowWater) || (kind == UtilityKind.Data && !ShowData)) continue;
             var nodes = report.Conduits.Where(n => n.Kind == kind).ToDictionary(n => n.Cell);
-            var color = Brush(kind == UtilityKind.Power ? "#D3A951" : "#58B4CF");
-            Vector offset = new(kind == UtilityKind.Power ? -3 : 3, kind == UtilityKind.Power ? -3 : 3);
+            var color = Brush(kind switch { UtilityKind.Power => "#D3A951", UtilityKind.Water => "#58B4CF", _ => "#BB91DB" });
+            Vector offset = kind switch { UtilityKind.Power => new(-3, -3), UtilityKind.Water => new(3, 3), _ => new(0, 0) };
             foreach (var node in nodes.Values)
             {
                 var center = CellCenter(node.Cell) + offset;
@@ -80,12 +81,12 @@ public sealed class CompoundMapControl : Control
                 context.DrawEllipse(node.Enabled ? color : Brushes.Red, null, center, 2.5, 2.5);
             }
         }
-        foreach (var building in report.Buildings.Where(b => b.Kind is not (BuildingKind.Floor or BuildingKind.Wall or BuildingKind.Door or BuildingKind.PowerCable or BuildingKind.WaterPipe)))
+        foreach (var building in report.Buildings.Where(b => b.Kind is not (BuildingKind.Floor or BuildingKind.Wall or BuildingKind.Door or BuildingKind.PowerCable or BuildingKind.WaterPipe or BuildingKind.DataCable)))
         {
             var area = AreaRect(building.Footprint).Deflate(3);
-            string color = building.Kind switch { BuildingKind.Stockpile => "#66573A", BuildingKind.Generator => "#5D5937", BuildingKind.Pump => "#2D6276", BuildingKind.Clinic => "#536D56", _ => "#3F536B" };
+            string color = building.Kind switch { BuildingKind.Stockpile => "#66573A", BuildingKind.Generator => "#5D5937", BuildingKind.Pump => "#2D6276", BuildingKind.Clinic => "#536D56", BuildingKind.Computer => "#65547E", BuildingKind.Battery => "#4A6B61", _ => "#3F536B" };
             context.DrawRectangle(Brush(color), new Pen(building.Operational ? Brush("#8FADB5") : Brush("#E1925F"), 1.5), area, 3, 3);
-            string label = building.Kind switch { BuildingKind.Stockpile => "S", BuildingKind.Generator => "GEN", BuildingKind.Pump => "PUMP", BuildingKind.Clinic => "MED", _ => "BENCH" };
+            string label = building.Kind switch { BuildingKind.Stockpile => "S", BuildingKind.Generator => "GEN", BuildingKind.Pump => "PUMP", BuildingKind.Clinic => "MED", BuildingKind.Computer => "PC", BuildingKind.Battery => "BAT", _ => building.Id switch { "washer" => "WASH", "dryer" => "DRY", "shredder" => "SHRD", "moulder" => "MOULD", "electronics-bench" => "TECH", _ => "BENCH" } };
             Text(context, label, area.TopLeft + new Vector(3, 3), Brushes.White, Math.Clamp(Scale * .32, 8, 12));
             context.DrawEllipse(null, new Pen(Brush("#BDD3D6"), 1), CellCenter(building.InteractionCell), 3, 3);
         }
@@ -98,7 +99,7 @@ public sealed class CompoundMapControl : Control
         foreach (var path in report.Paths.Where(p => p.Cells.Count > 1))
             for (int i = 1; i < path.Cells.Count; i++)
                 context.DrawLine(new Pen(WorkerColor(path.WorkerId), 1.5, DashStyle.Dot, PenLineCap.Round), CellCenter(path.Cells[i - 1]), CellCenter(path.Cells[i]));
-        foreach (var worker in report.Workers)
+        foreach (var worker in report.Workers.Where(w => !w.Away))
         {
             var center = CellCenter(worker.Position);
             context.DrawEllipse(WorkerColor(worker.Id), new Pen(Brush("#111C24"), 1.5), center, Scale * .27, Scale * .27);

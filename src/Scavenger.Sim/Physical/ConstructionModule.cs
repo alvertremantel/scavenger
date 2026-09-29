@@ -82,8 +82,7 @@ public sealed class ConstructionModule : IPersistentModule
         else
         {
             if (!definition.Buildable) return "This fixture must be recovered intact; it cannot be built from bulk materials.";
-            if (definition.Kind is BuildingKind.PowerCable or BuildingKind.WaterPipe
-                && world.Module<UtilitiesModule>().HasNode(definition.Kind == BuildingKind.PowerCable ? UtilityKind.Power : UtilityKind.Water, request.Origin))
+            if (definition.ConduitKind is { } conduitKind && world.Module<UtilitiesModule>().HasNode(conduitKind, request.Origin))
                 return "A conduit of this kind already occupies this cell.";
             interaction = compound.ChooseInteraction(definition, request.Origin);
             if (interaction is null) return "No walkable interaction cell borders this site.";
@@ -131,6 +130,7 @@ public sealed class ConstructionModule : IPersistentModule
         foreach (var owner in job.InputOwners) inventory.ReleaseReservations(owner);
         job.ClearInputOwners();
         world.Module<WorkforceModule>().Release(job.Request.BuilderId, job.Owner);
+        if (job.Request.RepairTargetId is { } repairTarget && world.TryModule<Industry.EquipmentModule>(out var equipment)) equipment.Release(repairTarget, job.Owner);
         var events = new List<GameEvent>();
         foreach (var deliveryId in job.DeliveryIds)
         {

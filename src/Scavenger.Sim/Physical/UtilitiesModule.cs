@@ -39,8 +39,7 @@ public sealed class UtilitiesModule : IPersistentModule
     public IReadOnlyDictionary<CellPosition, int> ConnectedComponents(CompoundModule compound, UtilityKind kind)
     {
         var active = Nodes.Where(n => n.Kind == kind && n.Enabled && !compound.Buildings.Any(b => b.Condition <= 0
-            && b.Origin == n.Cell && compound.Definition(b.DefinitionId)!.Kind
-                == (kind == UtilityKind.Power ? BuildingKind.PowerCable : BuildingKind.WaterPipe)))
+            && b.Origin == n.Cell && compound.Definition(b.DefinitionId)!.ConduitKind == kind))
             .Select(n => n.Cell).ToHashSet();
         var components = new Dictionary<CellPosition, int>();
         int componentId = 0;
