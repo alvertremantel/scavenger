@@ -23,14 +23,17 @@ public sealed class MainWindow : Window
     private int _roomId;
     public GameSession Session { get; }
     public ScavengingPanel Scavenging { get; }
+    public RegionPanel Region { get; }
+    public TabControl WorkspaceTabs { get; } = new() { Name = "WorkspaceTabs" };
     public IndustryPanel Industry { get; }
     public CompoundMapControl Map { get; } = new() { Name = "CompoundMap", MinHeight = 320 };
     public TabControl OperationsTabs { get; } = new() { Name = "OperationsTabs" };
     public ComboBox ToolSelector { get; } = new() { Name = "MapTool", MinWidth = 165 };
     public string SavePath { get; set; } = Path.Combine(Environment.CurrentDirectory, "saves", "compound.json");
-    public MainWindow(bool regional = true)
+    public MainWindow(bool regional = true, bool generated = true)
     {
-        Session = new GameSession(regional);
+        Session = new GameSession(regional, generated);
+        Region = new RegionPanel(Session);
         Scavenging = new ScavengingPanel(Session);
         Title = "Scavenger · Compound operations";
         Industry = new IndustryPanel(Session);
@@ -40,7 +43,7 @@ public sealed class MainWindow : Window
         var heading = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         var title = new StackPanel { Spacing = 4 };
         title.Children.Add(Label("COMPOUND OPERATIONS", 24));
-        title.Children.Add(Label("Prototype / expeditions, medicine, recovery chains & compound construction", 12, "#9DB2BD"));
+        title.Children.Add(Label("Prototype / seeded region, expeditions, medicine & compound construction", 12, "#9DB2BD"));
         heading.Children.Add(title);
         var figures = new StackPanel { HorizontalAlignment = HorizontalAlignment.Right, Spacing = 4 };
         figures.Children.Add(_clock); figures.Children.Add(_mass); Add(heading, figures, 0, 1);
@@ -100,7 +103,14 @@ public sealed class MainWindow : Window
             tabs.Items.Add(new TabItem { Header = name, Content = new ScrollViewer { Content = rows, Margin = new Thickness(0, 8, 0, 0) } });
         }
         tabs.SelectedIndex = regional ? 0 : 1;
-        Add(workspace, tabs, 1); Add(shell, workspace, 3);
+        Add(workspace, tabs, 1);
+        WorkspaceTabs.Items.Add(new TabItem { Header = "Compound", Content = workspace });
+        WorkspaceTabs.Items.Add(new TabItem { Header = "Region", Content = Region });
+        WorkspaceTabs.SelectedIndex = regional && generated ? 1 : 0;
+        tools.IsVisible = WorkspaceTabs.SelectedIndex == 0;
+        WorkspaceTabs.SelectionChanged += (_, _) => tools.IsVisible = WorkspaceTabs.SelectedIndex == 0;
+        Region.PlanExpedition += id => { WorkspaceTabs.SelectedIndex = 0; OperationsTabs.SelectedIndex = 0; Scavenging.SelectLocation(id); };
+        Add(shell, WorkspaceTabs, 3);
         _status.TextWrapping = TextWrapping.Wrap; _status.Foreground = new SolidColorBrush(Color.Parse("#C4D7DC"));
         Add(shell, _status, 4);
         Content = shell;
@@ -167,6 +177,7 @@ public sealed class MainWindow : Window
         foreach (string entry in report.RecentEvents.Reverse()) events.Children.Add(Label(entry, 12));
         Industry.Refresh();
         Scavenging.Refresh();
+        Region.Refresh();
         UpdateInspector();
     }
     private void Table(string name, string[] headings, string widths, IEnumerable<string[]> data)

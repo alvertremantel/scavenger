@@ -10,6 +10,7 @@ using Scavenger.Desktop;
 using Scavenger.Sim.Physical;
 using Scavenger.Sim.Industry;
 using Scavenger.Sim.Scavenging;
+using Scavenger.Sim.Region;
 
 [assembly: CollectionBehavior(DisableTestParallelization = true)]
 namespace Scavenger.Desktop.Tests;
@@ -134,7 +135,7 @@ public class CompoundWindowTests
         using var session = HeadlessUnitTestSession.StartNew(typeof(RenderAppBuilder));
         await session.Dispatch(() =>
         {
-            var window = new MainWindow { Width = 1050, Height = 780 }; window.Show();
+            var window = new MainWindow(generated: false) { Width = 1050, Height = 780 }; window.Show();
             try
             {
                 SelectChoice(window, "ExpeditionLocation", "pharmacy");
@@ -170,6 +171,40 @@ public class CompoundWindowTests
                     }
                     Assert.DoesNotContain(window.Session.World.Module<ScavengingModule>().Expeditions, e => e.Active);
                 }
+            }
+            finally { window.Close(); }
+        }, CancellationToken.None);
+    }
+    [Fact]
+    public async Task RegionalMapSeedInputSelectionExpeditionAndSaveLoadWorkThroughRealUi()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(RenderAppBuilder));
+        await session.Dispatch(() =>
+        {
+            var window = new MainWindow { Width = 1050, Height = 780 }; window.Show();
+            try
+            {
+                Assert.Equal(1, window.WorkspaceTabs.SelectedIndex);
+                Assert.True(window.Region.Map.Bounds.Width > 400);
+                Find<TextBox>(window, "RegionSeed").Text = "42";
+                Click(window, Find<Button>(window, "GenerateRegionButton"));
+                var geography = window.Session.World.Module<RegionModule>(); Assert.Equal(42UL, geography.Seed);
+                var site = geography.Site("pharmacy-001")!;
+                var point = window.Region.Map.TranslatePoint(window.Region.Map.ParcelCenter(site.Parcel), window)!.Value;
+                window.MouseDown(point, MouseButton.Left, RawInputModifiers.None); window.MouseUp(point, MouseButton.Left, RawInputModifiers.None);
+                Dispatcher.UIThread.RunJobs(); Assert.Equal(site.LocationId, window.Region.Map.SelectedSite);
+                using (var frame = window.CaptureRenderedFrame())
+                { Assert.NotNull(frame); using var bytes = new MemoryStream(); frame.Save(bytes, PngBitmapEncoderOptions.Default); Assert.True(bytes.Length > 15000); }
+                Click(window, Find<Button>(window, "PlanRegionalExpeditionButton"));
+                Assert.Equal(0, window.WorkspaceTabs.SelectedIndex); Assert.Equal(0, window.OperationsTabs.SelectedIndex);
+                var location = Find<ComboBox>(window, "ExpeditionLocation"); Assert.Equal(site.LocationId, ((Choice)location.SelectedItem!).Id);
+                var salvage = window.Scavenging.SalvageSelector;
+                salvage.SelectedItems!.Add(salvage.Items.Cast<Choice>().Single(c => c.Id == "stock-sealed"));
+                Find<NumericUpDown>(window, "SalvageQuantity").Value = .1m;
+                Click(window, Find<Button>(window, "DispatchExpeditionButton"));
+                Assert.Single(window.Session.World.Module<ScavengingModule>().Expeditions);
+                string saved = window.Session.SaveJson(); window.Session.Advance(4); window.Session.LoadJson(saved);
+                Assert.Equal(42UL, window.Region.Map.Region!.Seed); PhysicalSave.ValidateWorld(window.Session.World);
             }
             finally { window.Close(); }
         }, CancellationToken.None);
