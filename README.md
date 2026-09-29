@@ -9,7 +9,8 @@ The prototype combines operational tables with a physical 2D compound in Avaloni
 [Production/computing plan](docs/PRODUCTION-AND-COMPUTING-PLAN.md) ·
 [Industrial walkthrough and audit](docs/PRODUCTION-AND-COMPUTING.md) ·
 [Scavenging plan](docs/SCAVENGING-PLAN.md) · [Expeditions and location yields](docs/SCAVENGING.md) ·
-[World-generation plan](docs/WORLD-GENERATION-PLAN.md) · [Generated worlds](docs/WORLD-GENERATION.md)
+[World-generation plan](docs/WORLD-GENERATION-PLAN.md) · [Original generated worlds](docs/WORLD-GENERATION.md) ·
+[Expanded geography plan](docs/EXPANDED-GEOGRAPHY-PLAN.md) · [Fifty-square-mile worlds and terrain](docs/EXPANDED-GEOGRAPHY.md)
 
 ## Layout
 
@@ -26,7 +27,8 @@ The project references that local engine checkout directly. It must be available
 [haldane-revision.txt](haldane-revision.txt); the engine remains a separate repository
 and is not yet packaged for distribution. The pinned engine revision includes the
 `Haldane.SupplyChain/Conversions.cs` primitive required by the industrial slice.
-Scavenging is merged into `main`; world generation is on `feature/regional-world-generation`; the independent engine checkout remains
+Scavenging and the initial world generator are merged into `main`. Expanded geography
+is on `feature/expanded-regional-geography`; the independent engine checkout remains
 on `feature/production-and-scavenged-computing` at the pinned revision.
 
 ## Run
@@ -52,10 +54,12 @@ workshop door interrupts hauling; reopening it resumes travel. `--roundtrip` sav
 reloads while blocked. `--json` emits the full physical report; `--ticks N` controls the
 run length. `--legacy` runs the earlier timed transport fixture.
 
-The desktop starts a seeded **10.12-square-mile region** with twenty authored location types,
-a connected town/river/road layout, varied finite sites, Mira ill and modest starting stores.
+The desktop starts a seeded **49.83-square-mile region** with twenty authored location types,
+compact, avenue-led or twin-center town layouts, outlying suburbs, connected roads and varied finite sites, Mira ill and modest starting stores.
 Under **Region**, enter a seed to generate a fresh world, click a site to inspect its stock
-and road route, then use **Plan expedition here**. Under **Compound → Scavenging**, select a team, destination and source
+and road route, then use **Plan expedition here**. Click any cell for mixed terrain
+percentages, elevation, moisture, flood susceptibility and roughness; switch map layers
+and zoom around the selected cell. Layout can be selected or chosen by the seed. Under **Compound → Scavenging**, select a team, destination and source
 objects; dispatch, respond to field incidents, recall, and receive actual cargo. Recover
 pharmacy supplies and hardware sorbent, then refine/formulate the fictional treatment
 at the clinic. See [the expedition walkthrough](docs/SCAVENGING.md) for quantities,

@@ -40,7 +40,7 @@ public sealed class ScavengingModule : IPersistentModule
     internal static void CheckDefinition(LocationDefinition d)
     {
         if (string.IsNullOrWhiteSpace(d.Id) || string.IsNullOrWhiteSpace(d.Name) || string.IsNullOrWhiteSpace(d.Description)
-            || d.TravelTicks is < 1 or > 10000 || d.InitialIntegrity is < 0 or > 1 || d.DecayPerDay is < 0 or > 1
+            || d.TravelTicks is < 1 or > 1_000_000 || d.InitialIntegrity is < 0 or > 1 || d.DecayPerDay is < 0 or > 1
             || d.RivalPressure is < 0 or > 1 || d.RivalKgPerDay < 0 || d.ExposurePerTick is < 0 or > 1
             || d.Salvage.Count == 0 || d.Salvage.Select(s => s.Id).Distinct(StringComparer.Ordinal).Count() != d.Salvage.Count)
             throw new ArgumentException("Invalid regional location definition.");

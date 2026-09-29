@@ -10,20 +10,24 @@ using Scavenger.Sim.Region;
 CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
 bool json = args.Contains("--json"), roundtrip = args.Contains("--roundtrip"), legacy = args.Contains("--legacy"), industry = args.Contains("--industry"), scavenging = args.Contains("--scavenging");
 bool generated = args.Contains("--world"), walkthrough = args.Contains("--walkthrough");
+SettlementMotif? motif = null; MapLayer layer = MapLayer.Terrain;
 ulong seed = GeneratedScenario.DefaultSeed; string? mapPath = null;
 int ticks = generated ? (walkthrough ? 400 : 0) : scavenging ? 400 : industry ? 2400 : legacy ? 8 : 120;
 for (int i = 0; i < args.Length; i++)
 {
     if (args[i] is "--json" or "--roundtrip" or "--legacy" or "--industry" or "--scavenging" or "--world" or "--walkthrough") continue;
     if (args[i] == "--seed" && i + 1 < args.Length && ulong.TryParse(args[++i], out seed)) continue;
+    if (args[i] == "--layout" && i + 1 < args.Length)
+    { motif = args[++i] switch { "compact" => SettlementMotif.Compact, "avenue" => SettlementMotif.Avenue, "twin-centers" => SettlementMotif.TwinCenters, _ => null }; if (motif is not null) continue; }
+    if (args[i] == "--layer" && i + 1 < args.Length && Enum.TryParse(args[++i], true, out layer) && Enum.IsDefined(layer)) continue;
     if (args[i] == "--map" && i + 1 < args.Length) { mapPath = args[++i]; continue; }
     if (args[i] == "--ticks" && i + 1 < args.Length && int.TryParse(args[++i], out ticks) && ticks is >= 0 and <= 100_000) continue;
-    Console.Error.WriteLine("Usage: dotnet run --project src/Scavenger.Cli -- [--json] [--roundtrip] [--ticks N] [--legacy | --industry | --scavenging | --world] [--seed N] [--map path.svg] [--walkthrough]");
+    Console.Error.WriteLine("Usage: dotnet run --project src/Scavenger.Cli -- [--json] [--roundtrip] [--ticks N] [--legacy | --industry | --scavenging | --world] [--seed N] [--layout compact|avenue|twin-centers] [--map path.svg] [--layer Terrain|Districts|Elevation|Moisture|FloodRisk] [--walkthrough]");
     return 2;
 }
 if (new[] { legacy, industry, scavenging, generated }.Count(v => v) > 1) { Console.Error.WriteLine("Choose one scenario."); return 2; }
-if ((mapPath is not null || walkthrough) && !generated) { Console.Error.WriteLine("--map and --walkthrough require --world."); return 2; }
-var (_, scheduler, _) = generated ? GeneratedScenario.Create(seed) : scavenging ? ScavengingScenario.Create(seed) : industry ? IndustrialScenario.Create(seed) : legacy ? CompoundScenario.Create(seed) : PhysicalCompoundScenario.Create(seed);
+if ((mapPath is not null || walkthrough || motif is not null) && !generated) { Console.Error.WriteLine("--map, --layout and --walkthrough require --world."); return 2; }
+var (_, scheduler, _) = generated ? GeneratedScenario.Create(seed, motif) : scavenging ? ScavengingScenario.Create(seed) : industry ? IndustrialScenario.Create(seed) : legacy ? CompoundScenario.Create(seed) : PhysicalCompoundScenario.Create(seed);
 if (!json) Console.WriteLine(legacy ? "Timed logistics experiment.\n" : "Physical compound: walking, door access, construction deliveries, and workstation utilities.\n");
 for (int step = 0; step < ticks; step++)
 {
@@ -43,7 +47,7 @@ for (int step = 0; step < ticks; step++)
     }
 }
 var report = CompoundReport.Capture(scheduler.World);
-if (mapPath is not null) { string path = Path.GetFullPath(mapPath); Directory.CreateDirectory(Path.GetDirectoryName(path)!); File.WriteAllText(path, RegionMapExport.Svg(scheduler.World.Module<RegionModule>())); }
+if (mapPath is not null) { string path = Path.GetFullPath(mapPath); Directory.CreateDirectory(Path.GetDirectoryName(path)!); File.WriteAllText(path, RegionMapExport.Svg(scheduler.World.Module<RegionModule>(), layer)); }
 if (json) Console.WriteLine(generated ? JsonSerializer.Serialize(new { Physical = PhysicalReport.Capture(scheduler.World), Industry = IndustryReport.Capture(scheduler.World), Geography = scheduler.World.Module<RegionModule>().ToSnapshot(), Region = scheduler.World.Module<ScavengingModule>().ToSnapshot() }, SaveManager.Options) : scavenging ? JsonSerializer.Serialize(new { Physical = PhysicalReport.Capture(scheduler.World), Industry = IndustryReport.Capture(scheduler.World), Region = scheduler.World.Module<ScavengingModule>().ToSnapshot() }, SaveManager.Options) : industry ? JsonSerializer.Serialize(new { Physical = PhysicalReport.Capture(scheduler.World), Industry = IndustryReport.Capture(scheduler.World) }, SaveManager.Options) : legacy ? JsonSerializer.Serialize(report, SaveManager.Options)
     : JsonSerializer.Serialize(PhysicalReport.Capture(scheduler.World), SaveManager.Options));
 else
