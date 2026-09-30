@@ -1,0 +1,59 @@
+<Application xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="Scavenger.Desktop.App" RequestedThemeVariant="Dark">
+  <Application.Resources>
+    <Color x:Key="SystemAccentColor">#8FAEA5</Color>
+    <CornerRadius x:Key="ControlCornerRadius">0</CornerRadius>
+    <CornerRadius x:Key="OverlayCornerRadius">0</CornerRadius>
+    <SolidColorBrush x:Key="ButtonBackground">#22292D</SolidColorBrush>
+    <SolidColorBrush x:Key="ButtonBackgroundPointerOver">#303B3E</SolidColorBrush>
+    <SolidColorBrush x:Key="ButtonBackgroundPressed">#394744</SolidColorBrush>
+    <SolidColorBrush x:Key="ButtonBorderBrush">#364044</SolidColorBrush>
+    <SolidColorBrush x:Key="ComboBoxBackground">#1A2024</SolidColorBrush>
+    <SolidColorBrush x:Key="TextControlBackground">#1A2024</SolidColorBrush>
+    <SolidColorBrush x:Key="TextControlBorderBrush">#364044</SolidColorBrush>
+    <SolidColorBrush x:Key="ComboBoxBorderBrush">#364044</SolidColorBrush>
+    <SolidColorBrush x:Key="ComboBoxBorderBrushPointerOver">#6B8179</SolidColorBrush>
+    <SolidColorBrush x:Key="ComboBoxDropDownBackground">#20282C</SolidColorBrush>
+    <SolidColorBrush x:Key="ComboBoxDropDownBorderBrush">#364044</SolidColorBrush>
+    <SolidColorBrush x:Key="ExpanderHeaderBackground">#1A2024</SolidColorBrush>
+    <SolidColorBrush x:Key="ExpanderHeaderBorderBrush">#30393E</SolidColorBrush>
+    <SolidColorBrush x:Key="ExpanderHeaderBackgroundPointerOver">#242D30</SolidColorBrush>
+    <SolidColorBrush x:Key="ExpanderHeaderBorderBrushPointerOver">#4B5A5F</SolidColorBrush>
+    <SolidColorBrush x:Key="ExpanderContentBackground">#1A2024</SolidColorBrush>
+    <SolidColorBrush x:Key="ExpanderContentBorderBrush">#30393E</SolidColorBrush>
+  </Application.Resources>
+  <Application.Styles>
+    <FluentTheme />
+    <Style Selector="Window">
+      <Setter Property="FontFamily" Value="Inter"/><Setter Property="FontSize" Value="13"/>
+      <Setter Property="Foreground" Value="#CBD1D3"/><Setter Property="Background"><SolidColorBrush Color="#13171A"/></Setter>
+    </Style>
+    <Style Selector="Button">
+      <Setter Property="CornerRadius" Value="0"/><Setter Property="FontSize" Value="12"/><Setter Property="FontWeight" Value="Normal"/><Setter Property="Foreground" Value="#CBD1D3"/>
+      <Setter Property="Padding" Value="12,8"/><Setter Property="MinHeight" Value="34"/>
+    </Style>
+    <Style Selector="Button.primary">
+      <Setter Property="Background" Value="#30413C"/><Setter Property="BorderBrush" Value="#617E72"/><Setter Property="Foreground" Value="#D5E1DC"/>
+    </Style>
+    <Style Selector="Button.nav">
+      <Setter Property="HorizontalContentAlignment" Value="Left"/><Setter Property="HorizontalAlignment" Value="Stretch"/>
+      <Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="2,0,0,0"/><Setter Property="BorderBrush" Value="Transparent"/>
+      <Setter Property="Foreground" Value="#89979D"/><Setter Property="Padding" Value="14,10"/>
+    </Style>
+    <Style Selector="Button.nav.active">
+      <Setter Property="Background" Value="#232D2D"/><Setter Property="BorderBrush" Value="#8FAEA5"/><Setter Property="Foreground" Value="#D5E1DC"/>
+    </Style>
+    <Style Selector="ComboBox"><Setter Property="Foreground" Value="#CBD1D3"/><Setter Property="FontWeight" Value="Normal"/><Setter Property="FontSize" Value="12"/><Setter Property="MinHeight" Value="34"/><Setter Property="CornerRadius" Value="0"/></Style>
+    <Style Selector="TextBox"><Setter Property="FontSize" Value="12"/><Setter Property="CornerRadius" Value="0"/></Style>
+    <Style Selector="NumericUpDown"><Setter Property="FontSize" Value="12"/><Setter Property="CornerRadius" Value="0"/></Style>
+    <Style Selector="CheckBox"><Setter Property="FontSize" Value="12"/><Setter Property="Foreground" Value="#9EA9AD"/></Style>
+    <Style Selector="ListBox"><Setter Property="Foreground" Value="#CBD1D3"/><Setter Property="FontWeight" Value="Normal"/><Setter Property="Background" Value="#161C20"/><Setter Property="BorderBrush" Value="#30393E"/><Setter Property="BorderThickness" Value="1"/><Setter Property="FontSize" Value="12"/></Style>
+    <Style Selector="ListBoxItem"><Setter Property="Padding" Value="10,6"/><Setter Property="MinHeight" Value="30"/></Style>
+    <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+      <Setter Property="Background" Value="#2D403C"/><Setter Property="Foreground" Value="#D5E1DC"/>
+    </Style>
+    <Style Selector="TabControl"><Setter Property="Padding" Value="0"/></Style>
+    <Style Selector="TabItem"><Setter Property="FontSize" Value="12"/><Setter Property="Padding" Value="14,10"/><Setter Property="Foreground" Value="#97A4A9"/></Style>
+    <Style Selector="TabItem:selected"><Setter Property="Foreground" Value="#D5E1DC"/></Style>
+    <Style Selector="ToolTip"><Setter Property="CornerRadius" Value="0"/></Style>
+  </Application.Styles>
+</Application>

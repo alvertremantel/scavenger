@@ -29,7 +29,7 @@ public sealed class RegionMapControl : Control
         : new((Bounds.Width - Region.Width * Scale) / 2, (Bounds.Height - Region.Height * Scale) / 2);
     public Point ParcelCenter(RegionPoint p) => Offset + new Vector((p.X + .5) * Scale, (p.Y + .5) * Scale);
     private static IBrush Brush(string s) => new SolidColorBrush(Color.Parse(s));
-    private static readonly IBrush Ink = Brush("#111c24"), Roads = Brush("#9da496"), Gold = Brush("#efc56d");
+    private static readonly IBrush Ink = Brush("#161D21"), Roads = Brush("#7F8C86"), Gold = Brush("#C8AA7C");
     private static void Text(DrawingContext c, string value, Point p, IBrush brush, double size)
         => c.DrawText(new FormattedText(value, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter"), size, brush), p);
     private static double Distance(Point a, Point b) => Math.Sqrt(Math.Pow(a.X - b.X, 2) + Math.Pow(a.Y - b.Y, 2));
@@ -51,7 +51,12 @@ public sealed class RegionMapControl : Control
     {
         base.Render(context); using var clip = context.PushClip(new Rect(Bounds.Size)); context.FillRectangle(Ink, new Rect(Bounds.Size));
         if (Region is not { } region) { Text(context, "This save has no generated geography.", new(24, 24), Brushes.White, 13); return; }
-        _cellColors ??= region.Cells.Select(c => Brush(RegionPalette.Color(c, Layer))).ToArray();
+        _cellColors ??= region.Cells.Select(c =>
+        {
+            var color = Color.Parse(RegionPalette.Color(c, Layer));
+            // Keep terrain differentiation while bringing the survey into the dark console palette.
+            return (IBrush)new SolidColorBrush(Color.FromRgb((byte)(22 + color.R * .40), (byte)(29 + color.G * .40), (byte)(33 + color.B * .40)));
+        }).ToArray();
         for (int y = 0; y < region.Height; y++) for (int x = 0; x < region.Width; x++)
         {
             context.FillRectangle(_cellColors[y * region.Width + x], new Rect(Offset.X + x * Scale, Offset.Y + y * Scale, Scale + .1, Scale + .1));
@@ -76,7 +81,7 @@ public sealed class RegionMapControl : Control
             bool highlighted = HighlightType is null || HighlightType == site.TypeId;
             double size = Math.Max(4, Scale * .85);
             var rect = new Rect(center.X - size / 2, center.Y - size / 2, size, size);
-            context.DrawRectangle(selected ? Gold : Ink, new Pen(highlighted ? Brushes.White : Roads, selected ? 2 : .6), rect);
+            context.DrawRectangle(selected ? Gold : Ink, new Pen(highlighted ? ConsoleUi.Brush("#BAC5BF") : Roads, selected ? 2 : .6), rect);
             if (highlighted && (Scale >= 6 || HighlightType is not null)) Text(context, type.Symbol, rect.TopLeft + new Vector(.5, -.5), selected ? Ink : Brushes.White, Math.Max(5, Scale * .62));
         }
         foreach (var center in region.Centers)

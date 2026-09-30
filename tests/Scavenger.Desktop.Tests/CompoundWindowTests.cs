@@ -94,6 +94,7 @@ public class CompoundWindowTests
             var window = new MainWindow(regional: false); window.Show();
             try
             {
+                window.Navigate("industry/0"); Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
                 Click(window, Find<Button>(window, "RecoveryOrdersButton"));
                 AdvanceUntil(window, () => window.Session.World.Module<InventoryModule>().Batches.Where(b => b.MaterialId == "part.polymer" && b.StockpileId == "workshop").Sum(b => b.QuantityKg) >= 1.6m);
                 window.Industry.Tabs.SelectedIndex = 1; // Hardware
@@ -124,6 +125,16 @@ public class CompoundWindowTests
                 using var frame = window.CaptureRenderedFrame(); Assert.NotNull(frame);
                 using var bytes = new MemoryStream(); frame.Save(bytes, PngBitmapEncoderOptions.Default); Assert.True(bytes.Length > 15000);
                 PhysicalSave.ValidateWorld(window.Session.World);
+                if (Environment.GetEnvironmentVariable("SCAVENGER_UI_ARTIFACT_DIR") is { Length: > 0 } auditPath)
+                {
+                    Directory.CreateDirectory(auditPath);
+                    foreach (string route in new[] { "home", "compound", "industry/0", "industry/1", "industry/2", "industry/3", "industry/4", "register/0" })
+                    {
+                        window.Navigate(route); Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
+                        using var audit = window.CaptureRenderedFrame()!;
+                        audit.Save(Path.Combine(auditPath, "developed-" + route.Replace("/", "-") + ".png"), PngBitmapEncoderOptions.Default);
+                    }
+                }
                 void WaitTask(ComputerTaskKind kind) => AdvanceUntil(window, () => window.Session.World.Module<ComputingModule>().Jobs.Any(j => j.Plan.Kind == kind && j.Status == ComputerTaskStatus.Completed));
             }
             finally { window.Close(); }
@@ -138,6 +149,7 @@ public class CompoundWindowTests
             var window = new MainWindow(generated: false) { Width = 1050, Height = 780 }; window.Show();
             try
             {
+                window.Navigate("scavenging"); Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
                 SelectChoice(window, "ExpeditionLocation", "pharmacy");
                 SelectSalvage("stock-sealed", "excipient", "sterile-water");
                 Click(window, Find<Button>(window, "DispatchExpeditionButton"));
@@ -146,6 +158,7 @@ public class CompoundWindowTests
                 SelectChoice(window, "ExpeditionLocation", "hardware"); SelectSalvage("filter-sorbent");
                 Find<NumericUpDown>(window, "SalvageQuantity").Value = .1m;
                 Click(window, Find<Button>(window, "DispatchExpeditionButton")); FinishExpeditions();
+                window.Navigate("clinic"); Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
                 Click(window, Find<Button>(window, "RefineMedicineButton"));
                 AdvanceUntil(window, () => window.Session.World.Module<InventoryModule>().Batches.Any(b => b.StockpileId == "clinic" && b.MaterialId == "medicine.refined"));
                 Click(window, Find<Button>(window, "FormulateMedicineButton"));
@@ -184,7 +197,10 @@ public class CompoundWindowTests
             var window = new MainWindow { Width = 1050, Height = 780 }; window.Show();
             try
             {
-                Assert.Equal(1, window.WorkspaceTabs.SelectedIndex);
+                Assert.Equal(0, window.WorkspaceTabs.SelectedIndex);
+                window.Navigate("region"); Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
+                window.Region.Tabs.SelectedIndex = 1;
+                Dispatcher.UIThread.RunJobs();
                 Assert.True(window.Region.Map.Bounds.Width > 400);
                 Find<TextBox>(window, "RegionSeed").Text = "42";
                 Click(window, Find<Button>(window, "GenerateRegionButton"));
@@ -196,7 +212,7 @@ public class CompoundWindowTests
                 using (var frame = window.CaptureRenderedFrame())
                 { Assert.NotNull(frame); using var bytes = new MemoryStream(); frame.Save(bytes, PngBitmapEncoderOptions.Default); Assert.True(bytes.Length > 15000); }
                 Click(window, Find<Button>(window, "PlanRegionalExpeditionButton"));
-                Assert.Equal(0, window.WorkspaceTabs.SelectedIndex); Assert.Equal(0, window.OperationsTabs.SelectedIndex);
+                Assert.Equal(3, window.WorkspaceTabs.SelectedIndex); Assert.Equal(0, window.Scavenging.Tabs.SelectedIndex);
                 var location = Find<ComboBox>(window, "ExpeditionLocation"); Assert.Equal(site.LocationId, ((Choice)location.SelectedItem!).Id);
                 var salvage = window.Scavenging.SalvageSelector;
                 salvage.SelectedItems!.Add(salvage.Items.Cast<Choice>().Single(c => c.Id == "stock-sealed"));
@@ -218,6 +234,8 @@ public class CompoundWindowTests
             var window = new MainWindow { Width = 1050, Height = 780 }; window.Show();
             try
             {
+                window.Navigate("region"); Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
+                window.Region.Tabs.SelectedIndex = 1; Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
                 Find<TextBox>(window, "RegionSeed").Text = "42";
                 SelectChoice(window, "RegionMotif", "TwinCenters"); Click(window, Find<Button>(window, "GenerateRegionButton"));
                 var map = window.Session.World.Module<RegionModule>(); Assert.Equal(SettlementMotif.TwinCenters, map.Motif);
@@ -241,6 +259,95 @@ public class CompoundWindowTests
             finally { window.Close(); }
         }, CancellationToken.None);
     }
+    [Fact]
+    public async Task HomeLinksRailAndKeyboardReachWorkspacesWithoutAdvancingAndRetainSelections()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(RenderAppBuilder));
+        await session.Dispatch(() =>
+        {
+            var window = new MainWindow { Width = 1050, Height = 780 }; window.Show();
+            try
+            {
+                Dispatcher.UIThread.RunJobs();
+                Assert.Equal(0, window.WorkspaceTabs.SelectedIndex);
+                Assert.Contains(window.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == "3 / 4");
+                decimal mass = window.Session.Report.TotalTrackedKg;
+                Click(window, Find<Button>(window, "AttentionclinicButton"));
+                Assert.Equal(3, window.WorkspaceTabs.SelectedIndex); Assert.Equal(1, window.Scavenging.Tabs.SelectedIndex);
+                Assert.Contains(window.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == "Ill / unavailable");
+                Click(window, Find<Button>(window, "NavOverviewButton"));
+                Click(window, Find<Button>(window, "Homeindustry4Button"));
+                Assert.Equal(4, window.WorkspaceTabs.SelectedIndex); Assert.Equal(4, window.Industry.Tabs.SelectedIndex);
+                Click(window, Find<Button>(window, "NavRegistersButton"));
+                window.OperationsTabs.SelectedIndex = 2; Dispatcher.UIThread.RunJobs();
+                Click(window, Find<Button>(window, "NavOverviewButton"));
+                Click(window, Find<Button>(window, "NavRegistersButton")); Assert.Equal(2, window.OperationsTabs.SelectedIndex);
+                window.KeyPress(Key.D2, RawInputModifiers.Control, default, null); window.KeyRelease(Key.D2, RawInputModifiers.Control, default, null); Dispatcher.UIThread.RunJobs();
+                Assert.Equal(1, window.WorkspaceTabs.SelectedIndex);
+                window.KeyPress(Key.Tab, RawInputModifiers.Control, default, null); window.KeyRelease(Key.Tab, RawInputModifiers.Control, default, null); Dispatcher.UIThread.RunJobs();
+                Assert.Equal(2, window.WorkspaceTabs.SelectedIndex);
+                window.KeyPress(Key.Tab, RawInputModifiers.Control | RawInputModifiers.Shift, default, null); window.KeyRelease(Key.Tab, RawInputModifiers.Control | RawInputModifiers.Shift, default, null); Dispatcher.UIThread.RunJobs();
+                Assert.Equal(1, window.WorkspaceTabs.SelectedIndex);
+                Assert.Equal(0, window.Session.Report.Tick); Assert.Equal(mass, window.Session.Report.TotalTrackedKg);
+            }
+            finally { window.Close(); }
+        }, CancellationToken.None);
+    }
+    [Fact]
+    public async Task RegisterSearchFiltersLiveRecordsAndSurvivesNavigationAndSimulationRefresh()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(RenderAppBuilder));
+        await session.Dispatch(() =>
+        {
+            var window = new MainWindow(regional: false); window.Show();
+            try
+            {
+                window.Navigate("register/0"); Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
+                var filter = Find<TextBox>(window, "RegisterFilter"); filter.Text = "DIESEL"; Dispatcher.UIThread.RunJobs();
+                string[] Rows() => window.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text ?? "").ToArray();
+                Assert.Contains(Rows(), t => t.Contains("fuel.diesel / depot-diesel"));
+                Assert.DoesNotContain(Rows(), t => t.Contains("water.clean / process-water"));
+                window.Session.Advance(); Dispatcher.UIThread.RunJobs(); Assert.Equal("DIESEL", filter.Text);
+                Click(window, Find<Button>(window, "NavOverviewButton")); Click(window, Find<Button>(window, "NavRegistersButton"));
+                Assert.Equal("DIESEL", Find<TextBox>(window, "RegisterFilter").Text);
+                filter.Text = "no-matching-record"; Dispatcher.UIThread.RunJobs(); Assert.Contains("No records in this view.", Rows());
+                filter.Text = ""; Dispatcher.UIThread.RunJobs(); Assert.Contains(Rows(), t => t.Contains("water.clean / process-water"));
+                Assert.Equal(1, window.Session.Report.Tick);
+            }
+            finally { window.Close(); }
+        }, CancellationToken.None);
+    }
+    [Fact]
+    public async Task MinimumWindowRendersEveryWorkspaceWithPersistentCommandBarAndVisibleMapAction()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(RenderAppBuilder));
+        await session.Dispatch(() =>
+        {
+            var window = new MainWindow { Width = 1050, Height = 780 }; window.Show();
+            try
+            {
+                foreach (string nav in new[] { "Overview", "Region", "Compound", "Expeditions", "Industry", "Registers" })
+                {
+                    Click(window, Find<Button>(window, "Nav" + nav + "Button"));
+                    foreach (string name in new[] { "StepButton", "DecisionButton", "SaveButton", "LoadButton" })
+                    {
+                        var c = Find<Button>(window, name); var p = c.TranslatePoint(default, window)!.Value;
+                        Assert.InRange(p.X, 0, window.Width - c.Bounds.Width); Assert.InRange(p.Y, 0, window.Height - c.Bounds.Height);
+                    }
+                    using var frame = window.CaptureRenderedFrame(); Assert.NotNull(frame);
+                    Assert.Equal(new PixelSize(1050, 780), frame.PixelSize);
+                    if (nav == "Region")
+                    {
+                        var button = Find<Button>(window, "PlanRegionalExpeditionButton"); var p = button.TranslatePoint(default, window)!.Value;
+                        Assert.InRange(p.Y, 0, window.Height - button.Bounds.Height);
+                        Assert.True(window.Region.Map.Bounds.Height >= 200);
+                    }
+                }
+                Assert.Equal(0, window.Session.Report.Tick);
+            }
+            finally { window.Close(); }
+        }, CancellationToken.None);
+    }
     private static void SelectParts(MainWindow window, IEnumerable<string> ids)
     {
         var selector = window.Industry.ComponentSelector; selector.SelectedItems!.Clear();
@@ -256,7 +363,7 @@ public class CompoundWindowTests
             var window = new MainWindow(regional: false) { Width = 1050, Height = 780 }; window.Show();
             try
             {
-                window.Industry.Tabs.SelectedIndex = 5;
+                window.Navigate("industry/5"); Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
                 SelectChoice(window, "TransferBatchSelector", "salvage-metal.steel");
                 Click(window, Find<Button>(window, "TransferButton"));
                 var first = Assert.Single(window.Session.World.Module<LogisticsModule>().Jobs); Assert.Equal(1, first.Request.QuantityKg);
