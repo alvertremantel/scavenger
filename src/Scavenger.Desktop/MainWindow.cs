@@ -31,6 +31,10 @@ public sealed class MainWindow : Window
     public RegionPanel Region { get; }
     public TabControl WorkspaceTabs { get; } = new() { Name = "WorkspaceTabs" };
     public IndustryPanel Industry { get; }
+    public MapWorkspace CompoundWorkspace { get; }
+    private readonly Dictionary<string, Control> _compoundViews = [];
+    private readonly StackPanel _compoundTaskCards = new() { Spacing = 8 };
+    private bool _routingContext;
     public CompoundMapControl Map { get; } = new() { Name = "CompoundMap", MinHeight = 320 };
     public TabControl OperationsTabs { get; } = new() { Name = "OperationsTabs" };
     public ComboBox ToolSelector { get; } = new() { Name = "MapTool", MinWidth = 165 };
@@ -38,75 +42,80 @@ public sealed class MainWindow : Window
     public HomePanel Home { get; }
     private readonly Dictionary<int, Button> _navigation = [];
     private readonly TextBlock _breadcrumb = ConsoleUi.Eyebrow("Overview / home");
+    private readonly TextBlock _registerSummary = ConsoleUi.Text("", 11, ConsoleUi.Muted);
     private readonly TextBlock _runState = ConsoleUi.Text("PAUSED", 10, ConsoleUi.Accent);
     public MainWindow(bool regional = true, bool generated = true)
     {
         Session = new GameSession(regional, generated);
         Region = new RegionPanel(Session); Scavenging = new ScavengingPanel(Session);
         Industry = new IndustryPanel(Session); Home = new HomePanel(Session);
-        Title = "Scavenger / Compound operator console";
+        Title = "Scavenger / Compound survival";
         Width = 1440; Height = 1000; MinWidth = 1050; MinHeight = 780;
-        var shell = new Grid { ColumnDefinitions = new ColumnDefinitions("168,*"), RowDefinitions = new RowDefinitions("*,Auto") };
-        var rail = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto"), Background = ConsoleUi.Brush("#171C20") };
-        var identity = new StackPanel { Spacing = 5, Margin = new Thickness(20, 25, 12, 24) };
-        identity.Children.Add(ConsoleUi.Text("SCAVENGER", 15, ConsoleUi.Accent));
-        identity.Children.Add(ConsoleUi.Eyebrow("Compound console")); rail.Children.Add(identity);
-        var nav = new StackPanel { Spacing = 3 };
-        string[] titles = ["Overview", "Region", "Compound", "Expeditions", "Industry", "Registers"];
-        nav.Children.Add(new Border { Padding = new Thickness(20, 8), Child = ConsoleUi.Eyebrow("Workspaces") });
+        var shell = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto") };
+        var top = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), ColumnSpacing = 26, Margin = new Thickness(18, 10) };
+        top.Children.Add(ConsoleUi.Text("SCAVENGER", 17, ConsoleUi.Accent));
+        var nav = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        string[] titles = ["Dashboard", "Region", "Compound", "Registers"];
         for (int i = 0; i < titles.Length; i++)
         {
             int index = i;
-            var button = ConsoleUi.Button($"{i + 1:00}   {titles[i]}", () => WorkspaceTabs.SelectedIndex = index, $"Nav{titles[i]}Button");
+            var button = ConsoleUi.Button(titles[i], () => WorkspaceTabs.SelectedIndex = index, $"Nav{titles[i]}Button");
             button.Classes.Add("nav"); ToolTip.SetTip(button, $"{titles[i]} · Ctrl+{i + 1}"); _navigation.Add(i, button); nav.Children.Add(button);
         }
-        nav.Children.Add(new Border { Padding = new Thickness(20, 20, 12, 8), Child = ConsoleUi.Eyebrow("Direct access") });
-        foreach (var (label, route) in new[] { ("Clinic", "clinic"), ("Power & reserves", "industry/4"), ("Hardware", "industry/1"), ("Store transfers", "industry/5") })
-        { var b = ConsoleUi.Button(label, () => Navigate(route), "Quick" + route.Replace("/", "")); b.Classes.Add("nav"); nav.Children.Add(b); }
-        Add(rail, nav, 1);
-        var railFoot = new StackPanel { Margin = new Thickness(20), Spacing = 6 };
-        railFoot.Children.Add(ConsoleUi.Eyebrow("Local workstation")); railFoot.Children.Add(ConsoleUi.Text("Offline / operator 01", 11, ConsoleUi.Muted));
-        railFoot.Children.Add(ConsoleUi.Text("Ctrl+Tab  switch view", 10, ConsoleUi.Muted)); Add(rail, railFoot, 2);
-        shell.Children.Add(new Border { Child = rail, BorderBrush = ConsoleUi.Brush(ConsoleUi.Line), BorderThickness = new Thickness(0, 0, 1, 0) });
-        var main = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*"), RowSpacing = 14, Margin = new Thickness(24, 20, 24, 16) };
-        var top = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-        top.Children.Add(_breadcrumb);
-        var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 16 };
-        right.Children.Add(_runState); right.Children.Add(_clock); Add(top, right, 0, 1); main.Children.Add(top);
-        var toolbar = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Background = ConsoleUi.Brush("#1A2024") };
-        var timeControls = new WrapPanel { Margin = new Thickness(10, 8, 0, 4) };
+        Add(top, nav, 0, 1);
+        var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, VerticalAlignment = VerticalAlignment.Center };
+        right.Children.Add(_runState); right.Children.Add(_clock); Add(top, right, 0, 2); shell.Children.Add(top);
+        var toolbar = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), ColumnSpacing = 16, Margin = new Thickness(18, 0, 18, 8) };
+        var timeControls = new StackPanel { Orientation = Orientation.Horizontal };
         timeControls.Children.Add(Action("Step", () => { Pause(); Session.Advance(); }, "StepButton"));
         timeControls.Children.Add(Action("+12 ticks", () => { Pause(); Session.Advance(12, true); }, "AdvanceButton"));
         timeControls.Children.Add(Action("+1 day", () => { Pause(); Session.Advance(Session.World.Clock.Time.TicksPerDay, true); }, "DayButton"));
-        timeControls.Children.Add(Action("Until decision", () => { Pause(); Session.Advance(1000, true); }, "DecisionButton"));
-        _run = Action("Run", ToggleRun, "RunButton"); _run.Classes.Add("primary"); timeControls.Children.Add(_run); toolbar.Children.Add(timeControls);
-        var persistence = ConsoleUi.Bar(Action("Save", SaveSlot, "SaveButton"), Action("Load", LoadSlot, "LoadButton"));
-        persistence.Margin = new Thickness(12, 8, 0, 0); Add(toolbar, persistence, 0, 1);
-        Add(main, new Border { Child = toolbar, BorderThickness = new Thickness(1), BorderBrush = ConsoleUi.Brush(ConsoleUi.Line) }, 1);
-
+        timeControls.Children.Add(Action("Until event", () => { Pause(); Session.Advance(1000, true); }, "DecisionButton"));
+        _run = Action("Run ▶", ToggleRun, "RunButton"); _run.Classes.Add("primary"); timeControls.Children.Add(_run); toolbar.Children.Add(timeControls);
+        _breadcrumb.VerticalAlignment = VerticalAlignment.Center; Add(toolbar, _breadcrumb, 0, 1);
+        Add(toolbar, ConsoleUi.Bar(Action("Save", SaveSlot, "SaveButton"), Action("Load", LoadSlot, "LoadButton")), 0, 2);
+        Add(shell, toolbar, 1);
+        var main = new Grid { Margin = new Thickness(12, 0, 12, 8) };
+        ConsoleUi.HideHeaders(WorkspaceTabs);
         ToolSelector.ItemsSource = new MapTool[] { new("Inspect"), new("Floor", "floor"), new("Wall", "wall"), new("Door", "door"),
             new("Storage zone", "stockpile"), new("Workbench", "workbench"), new("Power cable", "power-cable"), new("Water pipe", "water-pipe"), new("Data cable", "data-cable"), new("Room zone") };
-        ToolSelector.SelectedIndex = 0; ToolSelector.SelectionChanged += (_, _) => { _roomCorner = null; UpdateInspector(); };
+        ToolSelector.SelectedIndex = 0; ToolSelector.SelectionChanged += (_, _) => { _roomCorner = null; if (CompoundWorkspace is not null && ToolSelector.SelectedIndex > 0) ShowCompound("build"); UpdateInspector(); };
         var power = new CheckBox { Content = "Power", IsChecked = true, Name = "PowerOverlay" }; power.IsCheckedChanged += (_, _) => Map.ShowPower = power.IsChecked == true;
         var water = new CheckBox { Content = "Water", IsChecked = true, Name = "WaterOverlay" }; water.IsCheckedChanged += (_, _) => Map.ShowWater = water.IsChecked == true;
         var data = new CheckBox { Content = "Data", IsChecked = true, Name = "DataOverlay" }; data.IsCheckedChanged += (_, _) => Map.ShowData = data.IsChecked == true;
-        var compound = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto"), RowSpacing = 14 };
-        compound.Children.Add(ConsoleUi.PageHeading("Compound plan", "Construction, access and utilities / click to place, right-click to inspect."));
-        Add(compound, ConsoleUi.Frame(ConsoleUi.Bar(ConsoleUi.Field("Map tool", ToolSelector), power, water, data), new Thickness(14, 10, 14, 2)), 1);
-        var mapRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,280"), ColumnSpacing = 14 };
-        mapRow.Children.Add(ConsoleUi.Frame(Map, new Thickness(0)));
-        var details = new StackPanel { Spacing = 16 };
+        var compoundTools = ConsoleUi.Bar(ToolSelector,
+            Action("Build", () => ShowCompound("build"), "CompoundBuildButton"),
+            Action("Clinic", () => Navigate("clinic"), "ClinicButton"),
+            Action("Production", () => Navigate("industry/0"), "CompoundProductionButton"),
+            Action("Power", () => Navigate("industry/4"), "CompoundPowerButton"),
+            Action("Tasks", () => ShowCompound("tasks"), "CompoundTasksButton"));
+        CompoundWorkspace = new MapWorkspace("Compound", Map, compoundTools, new[] {
+            new Choice("inspect", "Inspect / repair"), new Choice("build", "Build / utilities"),
+            new Choice("clinic", "Clinic / treatment"), new Choice("production", "Production / stock targets"),
+            new Choice("power", "Power / generator fuel"), new Choice("transfers", "Logistics / transfers"),
+            new Choice("computers", "Computers / automation"), new Choice("crew", "Crew / assignments"), new Choice("tasks", "Tasks / progress") });
         _inspector.TextWrapping = TextWrapping.Wrap; _inspector.FontSize = 12; _inspector.LineHeight = 20;
-        var inspection = new StackPanel { Spacing = 12 }; inspection.Children.Add(_inspector); inspection.Children.Add(_inspectionActions);
-        details.Children.Add(ConsoleUi.Section("Cell inspector", inspection));
-        details.Children.Add(ConsoleUi.Section("Operators & duties", _duties));
-        details.Children.Add(ConsoleUi.Section("Project assignments", _staffActions, "Cancel batches, hauls and expeditions in their own workspaces; release experimental project assignments here."));
-        details.Children.Add(ConsoleUi.Section("Plan notation", ConsoleUi.Text("Gold / power\nBlue / water\nViolet / data\n\nDotted paths / intended movement\nDashed outlines / construction\nNumbered markers / operators", 11, ConsoleUi.Muted)));
-        Add(mapRow, new ScrollViewer { Content = details }, 0, 1); Add(compound, mapRow, 2);
-        Add(compound, ConsoleUi.Bar(Action("Recovery stock orders", Session.BeginDemo, "DemoButton"), Action("Store transfers →", () => Navigate("industry/5"), "HaulButton"),
-            Action("Personnel & duties →", () => Navigate("register/2"), "InspectButton"), Action("Open clinic →", () => Navigate("clinic"), "ClinicButton"),
-            Action("Reset scenario", () => { Pause(); Session.Reset(); }, "ResetButton")), 3);
-        var registers = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*"), RowSpacing = 12 };
+        _compoundViews["inspect"] = new ScrollViewer { Content = new StackPanel { Spacing = 12, Children = {
+            ConsoleUi.Text("Selected parcel", 20), _inspector, _inspectionActions,
+            ConsoleUi.Text("Click fixtures to manage their operations. Right-click to inspect access, repairs and utility connections.", 11, ConsoleUi.Muted) } } };
+        var build = new StackPanel { Spacing = 10, Children = { ConsoleUi.Text("Build the compound", 20),
+            ConsoleUi.Text("Choose a plan, then click a clear parcel. Noor builds; Ivo delivers materials from the depot.", 12, ConsoleUi.Muted) } };
+        for (int i = 1; i < ToolSelector.Items.Count; i++)
+        { int tool = i; build.Children.Add(ConsoleUi.Button(((MapTool)ToolSelector.Items[i]!).Label, () => ToolSelector.SelectedIndex = tool, "BuildTool" + i)); }
+        build.Children.Add(ConsoleUi.Eyebrow("Map overlays")); build.Children.Add(ConsoleUi.Bar(power, water, data));
+        build.Children.Add(ConsoleUi.Text("Gold / power · blue / water · violet / data\nNumbered markers / workers · dashed footprints / planned construction", 11, ConsoleUi.Muted));
+        build.Children.Add(Action("Reset this compound", () => { Pause(); Session.Reset(); }, "ResetButton"));
+        _compoundViews["build"] = new ScrollViewer { Content = build };
+        _compoundViews["clinic"] = Scavenging.ClinicView;
+        foreach (string mode in new[] { "production", "power", "transfers", "computers" }) _compoundViews[mode] = Industry;
+        _compoundViews["crew"] = new ScrollViewer { Content = new StackPanel { Spacing = 12, Children = {
+            ConsoleUi.Text("Crew & assignments", 20), _duties, _staffActions,
+            Action("Personnel register →", () => Navigate("register/2"), "InspectButton") } } };
+        _compoundViews["tasks"] = new ScrollViewer { Content = _compoundTaskCards };
+        CompoundWorkspace.ModeChanged += mode => ShowCompound(mode);
+        Industry.Tabs.SelectionChanged += (_, e) => { if (ReferenceEquals(e.Source, Industry.Tabs) && !_routingContext) ShowCompound(Industry.Tabs.SelectedIndex switch { 4 => "power", 5 => "transfers", 1 or 2 or 3 => "computers", _ => "production" }, false); };
+        ShowCompound("inspect");
+        var registers = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*"), RowSpacing = 12 };
         registers.Children.Add(ConsoleUi.PageHeading("Compound registers", "Inventory, workforce and service records / live operational data."));
         foreach (string name in new[] { "Materials", "Stores", "Workers", "Jobs", "Services", "Events" })
         {
@@ -114,11 +123,12 @@ public sealed class MainWindow : Window
             OperationsTabs.Items.Add(new TabItem { Header = name, Name = "Register" + name, Content = new ScrollViewer { Content = ConsoleUi.Section(name + " register", rows), Margin = new Thickness(0, 14, 0, 0) } });
         }
         _recordFilter.TextChanged += (_, _) => FilterRecords();
-        Add(registers, _recordFilter, 1); Add(registers, OperationsTabs, 2);
-        var pages = new Control[] { Home, Region, compound, Scavenging, Industry, registers };
+        Add(registers, _registerSummary, 1); Add(registers, _recordFilter, 2); Add(registers, OperationsTabs, 3);
+        var pages = new Control[] { Home, Region, CompoundWorkspace, registers };
         for (int i = 0; i < pages.Length; i++) WorkspaceTabs.Items.Add(new TabItem { Header = titles[i], Name = "Workspace" + titles[i], Content = pages[i] });
         WorkspaceTabs.SelectedIndex = regional ? 0 : 2;
         WorkspaceTabs.SelectionChanged += (_, _) => UpdateNavigation();
+        Region.AttachOperations(Scavenging);
         Region.PlanExpedition += id => { Navigate("scavenging"); Scavenging.SelectLocation(id); };
         Home.Navigate += route =>
         {
@@ -126,19 +136,19 @@ public sealed class MainWindow : Window
             else Navigate(route);
         };
         Scavenging.Navigate += Navigate; Industry.Navigate += Navigate;
-        Add(main, WorkspaceTabs, 2); Add(shell, main, 0, 1);
+        main.Children.Add(WorkspaceTabs); Add(shell, main, 2);
         var footer = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 16, Margin = new Thickness(18, 8) };
         _status.TextWrapping = TextWrapping.Wrap; _status.FontSize = 11; footer.Children.Add(_status);
         _mass.FontSize = 10; _mass.Foreground = ConsoleUi.Brush(ConsoleUi.Muted); Add(footer, _mass, 0, 1);
         var footFrame = new Border { Child = footer, BorderBrush = ConsoleUi.Brush(ConsoleUi.Line), BorderThickness = new Thickness(0, 1, 0, 0) };
-        Grid.SetColumnSpan(footFrame, 2); Add(shell, footFrame, 1); Content = shell;
+        Add(shell, footFrame, 3); Content = shell;
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
         _timer.Tick += (_, _) => { if (Session.Advance(1, true).StoppedEarly) Pause(); };
         AddHandler(KeyDownEvent, (_, e) =>
         {
             if (!e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Control)) return;
-            if (e.Key is >= Avalonia.Input.Key.D1 and <= Avalonia.Input.Key.D6) { WorkspaceTabs.SelectedIndex = (int)e.Key - (int)Avalonia.Input.Key.D1; e.Handled = true; }
-            if (e.Key == Avalonia.Input.Key.Tab) { WorkspaceTabs.SelectedIndex = (WorkspaceTabs.SelectedIndex + (e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Shift) ? 5 : 1)) % 6; e.Handled = true; }
+            if (e.Key is >= Avalonia.Input.Key.D1 and <= Avalonia.Input.Key.D4) { WorkspaceTabs.SelectedIndex = (int)e.Key - (int)Avalonia.Input.Key.D1; e.Handled = true; }
+            if (e.Key == Avalonia.Input.Key.Tab) { WorkspaceTabs.SelectedIndex = (WorkspaceTabs.SelectedIndex + (e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Shift) ? 3 : 1)) % 4; e.Handled = true; }
         }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         Session.Changed += Refresh; Map.CellClicked += OnCell;
         Closed += (_, _) => { Pause(); Session.Changed -= Refresh; };
@@ -147,19 +157,32 @@ public sealed class MainWindow : Window
     public void Navigate(string route)
     {
         if (route.StartsWith("industry/", StringComparison.Ordinal) && int.TryParse(route[9..], out int page) && page is >= 0 and <= 6)
-        { WorkspaceTabs.SelectedIndex = 4; Industry.Tabs.SelectedIndex = page; }
+        { WorkspaceTabs.SelectedIndex = 2; Industry.Tabs.SelectedIndex = page; ShowCompound(page switch { 4 => "power", 5 => "transfers", 1 or 2 or 3 => "computers", _ => "production" }, false); }
         else if (route.StartsWith("register/", StringComparison.Ordinal) && int.TryParse(route[9..], out int register) && register is >= 0 and <= 5)
-        { WorkspaceTabs.SelectedIndex = 5; OperationsTabs.SelectedIndex = register; }
-        else WorkspaceTabs.SelectedIndex = route switch { "region" => 1, "compound" => 2, "scavenging" or "clinic" or "fieldteams" => 3, "industry" => 4, "registers" => 5, _ => 0 };
-        if (route == "fieldteams") Scavenging.Tabs.SelectedIndex = 3;
-        if (route is "clinic" or "scavenging") Scavenging.Tabs.SelectedIndex = route == "clinic" ? 1 : 0;
+        { WorkspaceTabs.SelectedIndex = 3; OperationsTabs.SelectedIndex = register; }
+        else if (route == "find/computer") { WorkspaceTabs.SelectedIndex = 1; Region.SearchSupplies("computer"); }
+        else if (route is "scavenging" or "fieldteams") { WorkspaceTabs.SelectedIndex = 1; Region.Show(route == "fieldteams" ? "teams" : "plan"); if (route == "scavenging") Scavenging.ShowPlanningStep(0); }
+        else if (route == "clinic") { WorkspaceTabs.SelectedIndex = 2; ShowCompound("clinic"); }
+        else { WorkspaceTabs.SelectedIndex = route switch { "region" => 1, "compound" or "industry" => 2, "registers" => 3, _ => 0 }; if (route == "compound") ShowCompound("inspect"); }
         UpdateNavigation();
+    }
+    private void ShowCompound(string mode, bool selectPage = true)
+    {
+        if (_routingContext) return;
+        _routingContext = true;
+        try
+        {
+            CompoundWorkspace.Show(mode, _compoundViews[mode]);
+            if (selectPage && mode is "production" or "power" or "transfers" or "computers")
+                Industry.Tabs.SelectedIndex = mode switch { "power" => 4, "transfers" => 5, "computers" => 1, _ => 0 };
+        }
+        finally { _routingContext = false; }
     }
     private void UpdateNavigation()
     {
         foreach (var (index, button) in _navigation) button.Classes.Set("active", index == WorkspaceTabs.SelectedIndex);
-        string[] paths = ["Overview / home", "Field operations / regional survey", "Infrastructure / compound plan", "Field operations / expeditions & clinic", "Systems / industry & computing", "Records / compound registers"];
-        if (WorkspaceTabs.SelectedIndex is >= 0 and < 6) _breadcrumb.Text = paths[WorkspaceTabs.SelectedIndex].ToUpperInvariant();
+        string[] paths = ["Compound overview", "Regional operations", "Compound management", "Detailed registers"];
+        if (WorkspaceTabs.SelectedIndex is >= 0 and < 4) _breadcrumb.Text = paths[WorkspaceTabs.SelectedIndex].ToUpperInvariant();
     }
     private static TextBlock Label(string text, double size = 13, string color = ConsoleUi.Ink) => new()
     { Text = text, FontSize = size, Foreground = new SolidColorBrush(Color.Parse(color)), VerticalAlignment = VerticalAlignment.Center };
@@ -191,6 +214,14 @@ public sealed class MainWindow : Window
                 }
             }
         }
+        if (inspectOnly) ShowCompound("inspect");
+        else if (ToolSelector.SelectedIndex == 0)
+        {
+            var building = Session.Report.Buildings.FirstOrDefault(b => b.Footprint.Contains(cell));
+            string mode = building?.Kind switch { BuildingKind.Clinic => "clinic", BuildingKind.Computer => "computers", BuildingKind.Generator or BuildingKind.Battery => "power", BuildingKind.Stockpile => "transfers", BuildingKind.Workbench => "production", _ => "inspect" };
+            ShowCompound(mode);
+            if (building is not null) Industry.SelectFixture(building.Id);
+        }
         UpdateInspector();
     }
     private void Refresh()
@@ -200,9 +231,14 @@ public sealed class MainWindow : Window
         var report = Session.Report;
         Map.Report = report;
         long interval = report.Tick % Session.World.Clock.Time.TicksPerDay;
-        _clock.Text = $"DAY {Session.World.Clock.Day + 1:00}   {interval * 24 / Session.World.Clock.Time.TicksPerDay:00}:{interval * 1440 / Session.World.Clock.Time.TicksPerDay % 60:00}   /   TICK {report.Tick:0000}";
-        _mass.Text = $"MASS LEDGER  /  {report.TotalTrackedKg:0.##} kg tracked";
+        _clock.Text = $"DAY {Session.World.Clock.Day + 1:00}   {interval * 24 / Session.World.Clock.Time.TicksPerDay:00}:{interval * 1440 / Session.World.Clock.Time.TicksPerDay % 60:00}";
+        int fit = report.Workers.Count - (Session.World.TryModule<Scavenger.Sim.Scavenging.ScavengingModule>(out var health) ? health.Health.Count(h => h.Sick) : 0);
+        var stock = Session.World.Module<InventoryModule>();
+        decimal tank = stock.Batches.Where(b => b.StockpileId == "generator-tank" && b.MaterialId == "fuel.diesel").Sum(b => stock.AvailableKg(b.Id));
+        _mass.Text = $"CREW {fit}/{report.Workers.Count}  ·  TANK {tank:0.0} kg";
+        _mass.Foreground = ConsoleUi.Brush(tank < 3 ? ConsoleUi.Warning : ConsoleUi.Muted);
         _status.Text = Session.Status;
+        _registerSummary.Text = $"Stored {report.Inventory.StoredKg:0.##} kg · in transit {report.Inventory.InTransitKg:0.##} kg · mass accounted across the world {report.TotalTrackedKg:0.##} kg";
         Table("Materials", ["Material / batch", "Store", "kg", "Free kg", "Purity / known contamination"], "3*,2*,*,*,3*",
             report.Inventory.Batches.Select(b => new[] { $"{b.MaterialId} / {b.Id}", b.StockpileId, $"{b.QuantityKg:0.##}", $"{b.AvailableKg:0.##}", $"{b.Quality.Purity:P0} · {b.Quality.Grade}" + string.Concat(b.Quality.Contaminants.Select(c => $" · {c.Key} {c.Value:P0}")) }));
         Table("Stores", ["Store", "Location", "Stored kg", "Incoming kg", "Free / capacity kg"], "3*,*,*,*,2*",
@@ -219,13 +255,50 @@ public sealed class MainWindow : Window
         Table("Events", ["Activity / newest first"], "*", report.RecentEvents.Reverse().Select(entry => new[] { entry }));
         var workers = Session.World.Module<Haldane.CareerSim.Work.WorkforceModule>();
         var board = Session.World.Module<Haldane.CareerSim.Work.ProjectBoardModule>();
-        ConsoleUi.Table(_duties, ["Operator", "Activity"], "*,2*", report.Workers.Select(w => new[] { w.Name, w.WorkReason ?? w.Assignment ?? "Idle / awaiting orders" }));
+        ConsoleUi.Cards(_duties, ["Operator", "Activity"], report.Workers.Select(w => new[] { w.Name, w.WorkReason ?? w.Assignment ?? "Idle / awaiting orders" }));
         _staffActions.Children.Clear();
         foreach (var worker in workers.Staff.Where(w => board.IsAssigned(w.Id)))
         {
             int id = worker.Id;
             _staffActions.Children.Add(Action($"Release {worker.Name} from project", () => Session.ReleaseProject(id), $"ReleaseWorker{id}Button"));
         }
+        _compoundTaskCards.Children.Clear();
+        _compoundTaskCards.Children.Add(ConsoleUi.Text("Compound tasks", 20));
+        foreach (var job in report.Construction.Where(j => j.Status is not (ConstructionStatus.Completed or ConstructionStatus.Cancelled)))
+        {
+            string id = job.Id;
+            _compoundTaskCards.Children.Add(ConsoleUi.Frame(new StackPanel { Spacing = 8, Children = {
+                ConsoleUi.Text(job.Name, 13, ConsoleUi.Accent), ConsoleUi.Text($"{job.Status} · {job.CompletedEffort:0.##}/{job.RequiredEffort:0.##} effort\n{job.BlockedReason}", 11, ConsoleUi.Muted),
+                ConsoleUi.Button("Cancel construction", () => Session.Submit(new CancelBuildCommand(id)), "CancelBuild_" + id) } }, new Thickness(10)));
+        }
+        var production = Session.World.Module<Scavenger.Sim.Industry.ProductionModule>();
+        foreach (var job in production.Jobs.Where(j => j.Active))
+        {
+            string id = job.Plan.Id;
+            _compoundTaskCards.Children.Add(ConsoleUi.Frame(new StackPanel { Spacing = 8, Children = {
+                ConsoleUi.Text(production.Recipe(job.Plan.RecipeId)!.Name, 13, ConsoleUi.Accent),
+                ConsoleUi.Text($"{job.Status} · {job.EffortCompleted:0.##}/{production.Recipe(job.Plan.RecipeId)!.Effort} effort\n{job.BlockedReason}", 11, ConsoleUi.Muted),
+                ConsoleUi.Button("Cancel batch", () => Session.Submit(new Scavenger.Sim.Industry.CancelProductionCommand(id)), "CancelProduction_" + id) } }, new Thickness(10)));
+        }
+        foreach (var job in Session.World.Module<LogisticsModule>().Jobs.Where(j => j.Active))
+        {
+            string id = job.Request.Id;
+            _compoundTaskCards.Children.Add(ConsoleUi.Frame(new StackPanel { Spacing = 8, Children = {
+                ConsoleUi.Text($"Transfer · {job.Request.QuantityKg:0.###} kg", 13, ConsoleUi.Accent),
+                ConsoleUi.Text($"{job.Status} · {job.BlockedReason ?? "Worker carrying supplies"}", 11, ConsoleUi.Muted),
+                ConsoleUi.Button("Cancel unloaded haul", () => Session.Submit(new CancelHaulCommand(id)), "CancelHaul_" + id) } }, new Thickness(10)));
+        }
+        foreach (var job in Session.World.Module<Scavenger.Sim.Industry.ComputingModule>().Jobs.Where(j => j.Active))
+        {
+            string id = job.Plan.Id;
+            _compoundTaskCards.Children.Add(ConsoleUi.Frame(new StackPanel { Spacing = 8, Children = {
+                ConsoleUi.Text(job.Plan.Kind.ToString(), 13, ConsoleUi.Accent),
+                ConsoleUi.Text($"{job.Status} · {job.Progress:0.##} progress\n{job.BlockedReason}", 11, ConsoleUi.Muted),
+                ConsoleUi.Button("Cancel computer task", () => Session.Submit(new Scavenger.Sim.Industry.CancelComputerTaskCommand(id)), "CancelComputer_" + id) } }, new Thickness(10)));
+        }
+        _compoundTaskCards.Children.Add(Action("Production tasks →", () => Navigate("industry/0")));
+        _compoundTaskCards.Children.Add(Action("Transfers →", () => Navigate("industry/5"), "HaulButton"));
+        _compoundTaskCards.Children.Add(Action("Recovery stock orders", Session.BeginDemo, "DemoButton"));
         Home.Refresh();
         Industry.Refresh();
         Scavenging.Refresh();
@@ -256,7 +329,6 @@ public sealed class MainWindow : Window
         {
             lines.Add($"\n{building.Name} / {building.Id}\nCondition {building.Condition:P0}\nAccess {building.InteractionCell.X},{building.InteractionCell.Y}\nEmbedded {building.EmbeddedKg:0.##} kg\n{building.BlockedReason ?? "Operational"}");
             _inspectionActions.Children.Add(Action("Repair", () => Session.Repair(building.Id)));
-            _inspectionActions.Children.Add(Action("Damage", () => Session.Submit(new SetBuildingConditionCommand(building.Id, .3m))));
         }
         if (site is not null)
         {

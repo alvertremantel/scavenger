@@ -44,7 +44,7 @@ public static class Program
             int industry = Array.IndexOf(new[] { "production", "hardware", "archives", "compute", "energy", "transfers", "recipes" }, view);
             int register = Array.IndexOf(new[] { "materials", "stores", "workers", "jobs", "services", "events" }, view);
             window.Navigate(industry >= 0 ? $"industry/{industry}" : register >= 0 ? $"register/{register}" : view == "yields" ? "scavenging" : view == "region-setup" ? "region" : view);
-            if (view == "yields") window.Scavenging.Tabs.SelectedIndex = 2;
+            if (view == "yields") window.Scavenging.ShowCargoDetails();
             if (view == "region-setup") window.Region.Tabs.SelectedIndex = 1;
             window.UpdateLayout();
             using var frame = window.CaptureRenderedFrame() ?? throw new InvalidOperationException("No rendered frame.");

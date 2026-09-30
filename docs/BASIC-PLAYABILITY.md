@@ -1,4 +1,7 @@
-# Playing the compound prototype
+# Basic playability baseline
+
+This records the verified `b092ced` baseline. The current four-workspace UI is
+covered by [the updated play guide](MAP-CENTERED-UI.md).
 
 Run from the repository root:
 

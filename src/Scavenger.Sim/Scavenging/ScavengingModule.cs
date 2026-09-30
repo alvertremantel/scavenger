@@ -146,6 +146,7 @@ public sealed class ScavengingModule : IPersistentModule
         e.Status = ExpeditionStatus.Searching; e.Decision = null;
         return [ScavengingEvents.Event(world, ScavengingEvents.Changed, $"{e.Plan.Id}: {e.Reason}")];
     }
+    public int TravelTicksFor(Expedition expedition) => TravelTicks(Location(expedition.Plan.LocationId)!, expedition);
     private static int TravelTicks(ScavengeLocation l, Expedition e) => e.Plan.Approach == ExpeditionApproach.Careful ? l.Definition.TravelTicks : Math.Max(1, l.Definition.TravelTicks * 3 / 4);
     public IReadOnlyList<GameEvent> Tick(World world)
     {

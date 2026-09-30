@@ -36,15 +36,15 @@
     </Style>
     <Style Selector="Button.nav">
       <Setter Property="HorizontalContentAlignment" Value="Left"/><Setter Property="HorizontalAlignment" Value="Stretch"/>
-      <Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="2,0,0,0"/><Setter Property="BorderBrush" Value="Transparent"/>
-      <Setter Property="Foreground" Value="#89979D"/><Setter Property="Padding" Value="14,10"/>
+      <Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0,0,0,2"/><Setter Property="BorderBrush" Value="Transparent"/>
+      <Setter Property="Foreground" Value="#89979D"/><Setter Property="Padding" Value="14,8"/>
     </Style>
     <Style Selector="Button.nav.active">
       <Setter Property="Background" Value="#232D2D"/><Setter Property="BorderBrush" Value="#8FAEA5"/><Setter Property="Foreground" Value="#D5E1DC"/>
     </Style>
     <Style Selector="ComboBox"><Setter Property="Foreground" Value="#CBD1D3"/><Setter Property="FontWeight" Value="Normal"/><Setter Property="FontSize" Value="12"/><Setter Property="MinHeight" Value="34"/><Setter Property="CornerRadius" Value="0"/></Style>
     <Style Selector="TextBox"><Setter Property="FontSize" Value="12"/><Setter Property="CornerRadius" Value="0"/></Style>
-    <Style Selector="NumericUpDown"><Setter Property="FontSize" Value="12"/><Setter Property="CornerRadius" Value="0"/></Style>
+    <Style Selector="NumericUpDown"><Setter Property="ShowButtonSpinner" Value="False"/><Setter Property="FontSize" Value="12"/><Setter Property="CornerRadius" Value="0"/></Style>
     <Style Selector="CheckBox"><Setter Property="FontSize" Value="12"/><Setter Property="Foreground" Value="#9EA9AD"/></Style>
     <Style Selector="ListBox"><Setter Property="Foreground" Value="#CBD1D3"/><Setter Property="FontWeight" Value="Normal"/><Setter Property="Background" Value="#161C20"/><Setter Property="BorderBrush" Value="#30393E"/><Setter Property="BorderThickness" Value="1"/><Setter Property="FontSize" Value="12"/></Style>
     <Style Selector="ListBoxItem"><Setter Property="Padding" Value="10,6"/><Setter Property="MinHeight" Value="30"/></Style>
@@ -52,7 +52,7 @@
       <Setter Property="Background" Value="#2D403C"/><Setter Property="Foreground" Value="#D5E1DC"/>
     </Style>
     <Style Selector="TabControl"><Setter Property="Padding" Value="0"/></Style>
-    <Style Selector="TabItem"><Setter Property="FontSize" Value="12"/><Setter Property="Padding" Value="14,10"/><Setter Property="Foreground" Value="#97A4A9"/></Style>
+    <Style Selector="TabItem"><Setter Property="FontSize" Value="12"/><Setter Property="Padding" Value="14,8"/><Setter Property="Foreground" Value="#97A4A9"/></Style>
     <Style Selector="TabItem:selected"><Setter Property="Foreground" Value="#D5E1DC"/></Style>
     <Style Selector="ToolTip"><Setter Property="CornerRadius" Value="0"/></Style>
   </Application.Styles>

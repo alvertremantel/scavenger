@@ -7,6 +7,8 @@ using Scavenger.Sim.Region;
 
 namespace Scavenger.Desktop;
 
+public sealed record RegionTeamMarker(string Id, string Label, RegionPoint Point, bool Waiting);
+
 public sealed class RegionMapControl : Control
 {
     public RegionMapControl() => Cursor = new Cursor(StandardCursorType.Hand);
@@ -32,10 +34,15 @@ public sealed class RegionMapControl : Control
         }
         InvalidateVisual();
     }
+    public void Focus(RegionPoint p) { _zoom = Math.Max(2, _zoom); _center = new Point(p.X + .5, p.Y + .5); InvalidateVisual(); }
     public void ZoomOut() => ZoomAt(new Point(Bounds.Width / 2, Bounds.Height / 2), .5);
     public RegionModule? Region { get => _region; set { if (_region != value) { EndDrag(); _cellColors = null; _zoom = 1; _center = null; SelectedCell = null; SelectedSite = null; } _region = value; InvalidateVisual(); } }
-    public string? SelectedSite { get => _selected; set { _selected = value; InvalidateVisual(); } }
+    public string? SelectedSite { get => _selected; set { _selected = value; if (value is not null && Region?.Site(value) is { } site) SelectedCell = site.Parcel; InvalidateVisual(); } }
     public string? HighlightType { get; set; }
+    public IReadOnlyList<RegionTeamMarker> Teams { get; set; } = [];
+    public event Action<string>? TeamClicked;
+    public Point TeamCenter(string id)
+    { int index = Teams.ToList().FindIndex(t => t.Id == id); var team = Teams[index]; return ParcelCenter(team.Point) + new Vector(10 + Teams.Take(index).Count(t => t.Point == team.Point) * 20, -10); }
     public event Action<string>? SiteClicked;
     public event Action<RegionPoint>? CellClicked;
     private double Scale => Region is null ? 1 : Math.Max(.1, Math.Min((Bounds.Width - 36) / Region.Width, (Bounds.Height - 64) / Region.Height)) * _zoom;
@@ -92,6 +99,8 @@ public sealed class RegionMapControl : Control
             && Distance(_press, p) < 4 && new Rect(Bounds.Size).Contains(p);
         EndDrag(); e.Handled = true;
         if (!select || Region is null) return;
+        var team = Teams.OrderBy(t => Distance(TeamCenter(t.Id), p)).FirstOrDefault();
+        if (team is not null && Distance(TeamCenter(team.Id), p) <= 9) { TeamClicked?.Invoke(team.Id); return; }
         var cell = new RegionPoint((int)Math.Floor((p.X - Offset.X) / Scale), (int)Math.Floor((p.Y - Offset.Y) / Scale));
         if (!Region.Contains(cell)) return;
         SelectedCell = cell;
@@ -122,9 +131,14 @@ public sealed class RegionMapControl : Control
             // Keep terrain differentiation while bringing the survey into the dark console palette.
             return (IBrush)new SolidColorBrush(Color.FromRgb((byte)(22 + color.R * .40), (byte)(29 + color.G * .40), (byte)(33 + color.B * .40)));
         }).ToArray();
-        for (int y = 0; y < region.Height; y++) for (int x = 0; x < region.Width; x++)
+        var offset = Offset; double scale = Scale;
+        int minX = Math.Clamp((int)Math.Floor(-offset.X / scale), 0, region.Width);
+        int maxX = Math.Clamp((int)Math.Ceiling((Bounds.Width - offset.X) / scale), 0, region.Width);
+        int minY = Math.Clamp((int)Math.Floor(-offset.Y / scale), 0, region.Height);
+        int maxY = Math.Clamp((int)Math.Ceiling((Bounds.Height - offset.Y) / scale), 0, region.Height);
+        for (int y = minY; y < maxY; y++) for (int x = minX; x < maxX; x++)
         {
-            context.FillRectangle(_cellColors[y * region.Width + x], new Rect(Offset.X + x * Scale, Offset.Y + y * Scale, Scale + .1, Scale + .1));
+            context.FillRectangle(_cellColors[y * region.Width + x], new Rect(offset.X + x * scale, offset.Y + y * scale, scale + .1, scale + .1));
         }
         var roadPoints = region.Roads.Select(r => r.Point).ToHashSet();
         foreach (var road in region.Roads)
@@ -157,6 +171,12 @@ public sealed class RegionMapControl : Control
         if (SelectedCell is { } selectedCell)
         { var p = ParcelCenter(selectedCell); context.DrawRectangle(null, new Pen(Gold, 1.5), new Rect(p.X - Scale / 2, p.Y - Scale / 2, Scale, Scale)); }
         context.DrawEllipse(Gold, new Pen(Ink, 2), ParcelCenter(region.Compound), 6, 6);
+        foreach (var team in Teams)
+        {
+            var center = TeamCenter(team.Id);
+            context.DrawEllipse(team.Waiting ? ConsoleUi.Brush("#D88D68") : ConsoleUi.Brush("#9CB8AD"), new Pen(Ink, 2), center, 7, 7);
+            Text(context, team.Label, center + new Vector(10, -9), Brushes.White, 10);
+        }
         Text(context, "N ↑", new(12, 8), Brushes.White, 12);
         var start = new Point(12, Bounds.Height - 24);
         context.DrawLine(new Pen(Brushes.White, 2), start, start + new Vector((_zoom > 2 ? 200.0 : 1000.0) / region.CellMeters * Scale, 0));

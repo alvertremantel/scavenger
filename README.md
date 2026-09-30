@@ -4,7 +4,7 @@ A playable systems prototype for a compound-management game about scavenging, ch
 repair, logistics, and rebuilding industrial capability after an undecided apocalypse.
 The prototype combines operational tables with a physical 2D compound in Avalonia.
 
-[Play guide](docs/BASIC-PLAYABILITY.md) · [Playability plan](docs/BASIC-PLAYABILITY-PLAN.md) ·
+[Play guide](docs/MAP-CENTERED-UI.md) · [Map-centered UI plan](docs/MAP-CENTERED-UI-PLAN.md) · [Baseline playability](docs/BASIC-PLAYABILITY.md) · [Playability plan](docs/BASIC-PLAYABILITY-PLAN.md) ·
 [Working content outline](docs/CONTENT-OUTLINE.md) · [Engine foundations](docs/ENGINE-FOUNDATIONS.md) ·
 [Physical implementation plan](docs/PHYSICAL-COMPOUND-PLAN.md) · [Physical implementation and verification](docs/PHYSICAL-COMPOUND.md) ·
 [Production/computing plan](docs/PRODUCTION-AND-COMPUTING-PLAN.md) ·
@@ -29,7 +29,8 @@ The project references that local engine checkout directly. It must be available
 and is not yet packaged for distribution. The pinned engine revision includes the
 `Haldane.SupplyChain/Conversions.cs` primitive required by the industrial slice.
 Scavenging, expanded geography and the operator console are merged into `main`.
-Basic playability is on `feature/basic-playability`; the independent engine checkout remains
+The verified playability baseline is committed as `b092ced` on `feature/basic-playability`.
+The four-workspace UI is on `feature/map-centered-management`; the independent engine checkout remains
 on `feature/production-and-scavenged-computing` at the pinned revision.
 
 ## Run
@@ -61,14 +62,13 @@ Under **Region**, enter a seed to generate a fresh world, click a site to inspec
 and road route, then use **Plan expedition here**. Click any cell for mixed terrain
 percentages, elevation, moisture, flood susceptibility and roughness; switch map layers
 and drag to pan or wheel to zoom around the cursor. Zoom-out and Fit controls are also
-available. Layout can be selected or chosen by the seed. **Overview** offers guided supply plans.
-Under **Expeditions**, select a team, destination and source
-objects; dispatch, respond to field incidents, recall, and receive actual cargo. Recover
+available. Layout can be selected or chosen by the seed. **Dashboard** offers guided supply plans.
+In the **Region** sidebar, select a site, team and cargo; dispatch, respond to field incidents, recall, and receive actual cargo. Recover
 pharmacy supplies and hardware sorbent, then refine/formulate the fictional treatment
 at the clinic. See [the expedition walkthrough](docs/SCAVENGING.md) for quantities,
 location rationale, risk/quality rules and current abstractions.
 
-The industrial systems remain available: use **Recovery orders** under **Industry**
+The industrial systems remain available: use **Recovery orders** in **Compound → Production**
 to wash, dry, shred and mould recovered HDPE into repair clips. Diagnose individual computer
 parts, repair the cooler with those clips, assemble a PC, copy recovered offline software,
 study the textbook, and build telemetry/automation. Finite diesel, batteries, electrical demand,
@@ -77,20 +77,19 @@ memory, archive integrity and physical delivery constrain that progression. See 
 `--industry` runs a deterministic command-driven demonstration of this path in the CLI.
 Model training/evaluation are explicitly simulated game workloads; no actual ML code executes.
 
-The desktop opens on a live **Overview** dashboard. Six persistent workspaces —
-Overview, Region, Compound, Expeditions, Industry and Registers — are available from
-the rail and document tabs. Ctrl+1…6 selects a workspace; Ctrl+Tab / Ctrl+Shift+Tab
-cycles views. Dashboard and contextual links connect constraints to the relevant
-screen. Registers supports case-insensitive filtering across every record column.
-Clinic care has its own expedition subview; recipe specifications have their own
-industry library. **Region → World setup** replaces the current world with a new
-seeded scenario. See [the console design and validation notes](docs/OPERATOR-CONSOLE-UI.md).
+The desktop has four workspaces: **Dashboard**, **Region**, **Compound** and
+**Registers**. Ctrl+1–4 selects one; Ctrl+Tab / Ctrl+Shift+Tab cycles them. Region
+keeps the map visible while inspecting stock, finding supplies, planning expeditions
+or managing teams. Compound keeps its map visible while building, treating patients,
+managing production/power/transfers, servicing computers or reviewing tasks. Sidebars
+collapse without losing plans. Registers retains searchable detailed tables. See the
+[current play guide](docs/MAP-CENTERED-UI.md) for the complete loop.
 
 In **Compound**, choose a map tool and click a site, or
 inspect an existing fixture. Room zones use two interior corners. Right-click
 inspects without placing. The inspector supports door operation, repair, cancellation,
-and power/water/data conduit isolation; **Damage** is a prototype testing control. Accepted orders advance
-one tick; navigation and supply suggestions do not. **Step**, **+12 ticks**, **+1 day**, **Until decision**, and **Run** control time explicitly.
+and power/water/data conduit isolation. Accepted orders advance
+one tick; navigation and supply suggestions do not. **Step**, **+12 ticks**, **+1 day**, **Until event**, and **Run** control time explicitly.
 Normal time advances stop at pending field decisions, new warnings and completions.
 Save/load uses `saves/compound.json`. The screenshot mode uses actual Avalonia controls
 and Skia rendering without requiring a display server. For example:

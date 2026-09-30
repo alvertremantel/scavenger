@@ -23,7 +23,7 @@ public sealed class GameSession
     {
         _regional = regional; _generated = regional && generated; _seed = seed;
         var (_, scheduler, _) = _generated ? GeneratedScenario.Create(seed) : regional ? ScavengingScenario.Create(seed) : IndustrialScenario.Create(seed); Scheduler = scheduler;
-        Status = regional ? "Mira is ill. Follow the opening priorities on Overview. Supply plans let you review and dispatch a qualified team; time starts paused."
+        Status = regional ? "Mira is ill. Follow the opening priorities on Dashboard. Supply plans let you review and dispatch a qualified team; time starts paused."
             : "Plan recovery orders, examine the electronics cache, or build your compound.";
     }
     public SettlementMotif? RegionMotifPreference => _motif;
@@ -82,14 +82,14 @@ public sealed class GameSession
             if (stopOnDecision && (frame.StoppedEarly || PendingDecision is not null || lostPower || fuelWarning)) { stopped = true; break; }
         }
         var result = new FastForwardResult(advanced, events, stopped);
-        Status = result.StoppedEarly && fuelWarning ? $"Generator tank is low ({TankFuel():0.00} kg). Open Industry / Energy to deliver depot fuel, or plan a fuel expedition." : result.StoppedEarly ? PendingDecision ?? $"Stopped at tick {World.Clock.Tick}: {result.Events.LastOrDefault(e => e.Severity >= Haldane.Kernel.Events.EventSeverity.Warning || e.Kind == ScavengingEvents.Completed || e.Kind == IndustryEvents.Completed || e.Kind == CompoundEventKinds.ConstructionCompleted)?.Description ?? "Review the latest activity or power supply."}" : $"Advanced to tick {World.Clock.Tick}.";
+        Status = result.StoppedEarly && fuelWarning ? $"Generator tank is low ({TankFuel():0.00} kg). Open Compound / Power to deliver depot fuel, or plan a fuel expedition." : result.StoppedEarly ? PendingDecision ?? $"Stopped at tick {World.Clock.Tick}: {result.Events.LastOrDefault(e => e.Severity >= Haldane.Kernel.Events.EventSeverity.Warning || e.Kind == ScavengingEvents.Completed || e.Kind == IndustryEvents.Completed || e.Kind == CompoundEventKinds.ConstructionCompleted)?.Description ?? "Review the latest activity or power supply."}" : $"Advanced to tick {World.Clock.Tick}.";
         Changed?.Invoke();
         return result;
     }
     private decimal TankFuel() => World.Has<EnergyModule>()
         ? World.Module<InventoryModule>().Batches.Where(b => b.MaterialId == "fuel.diesel" && b.StockpileId == "generator-tank").Sum(b => World.Module<InventoryModule>().AvailableKg(b.Id)) : decimal.MaxValue;
     public string? PendingDecision => World.TryModule<ScavengingModule>(out var m) && m.Expeditions.FirstOrDefault(e => e.Status == ExpeditionStatus.Decision) is { } e
-        ? $"{e.Plan.Id} is waiting: {e.Reason} Open Expeditions and choose Assess / wait or Recall / retreat before advancing time." : null;
+        ? $"{e.Plan.Id} is waiting: {e.Reason} Open Region / Field teams and choose Assess / wait or Recall / retreat before advancing time." : null;
     public void Notify(string message) { Status = message; Changed?.Invoke(); }
     public CommandResult ReleaseProject(int workerId) => Submit(new UnassignStaffCommand(workerId));
     public CommandResult Build(string definitionId, CellPosition origin)
@@ -128,7 +128,7 @@ public sealed class GameSession
         {
             if (new[] { "wash-hdpe", "dry-hdpe", "shred-hdpe", "mould-clips" }.All(r =>
                 World.Module<OrdersModule>().Orders.Any(o => o.Plan.Template.RecipeId == r)))
-            { Notify("Recovery stock orders already exist. Review targets and pause/resume them in Industry."); return; }
+            { Notify("Recovery stock orders already exist. Review targets and pause/resume them in Compound / Production."); return; }
             IndustrialScenario.QueueRecoveryOrders(Scheduler);
         }
         else PhysicalCompoundScenario.QueueDemoCommands(Scheduler);

@@ -38,7 +38,7 @@ public sealed class HomePanel : UserControl
         world.TryModule<ScavengingModule>(out var scavenging); world.TryModule<EnergyModule>(out var energy); world.TryModule<ComputingModule>(out var computing);
         world.TryModule<ProductionModule>(out var production); world.TryModule<RegionModule>(out var region);
         var heading = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-        heading.Children.Add(PageHeading("Operations overview", "Your compound, at a glance. Review constraints, assign teams, keep systems running."));
+        heading.Children.Add(PageHeading("Dashboard", "Keep your people healthy. Recover supplies. Rebuild the compound."));
         var tag = Text(region is null ? "LOCAL OPERATIONS" : $"REGION {region.Seed}  /  {region.SquareMiles:0.0} MI²", 10, Accent);
         tag.VerticalAlignment = VerticalAlignment.Center; Grid.SetColumn(tag, 1); heading.Children.Add(tag); _body.Children.Add(heading);
         int sick = scavenging?.Health.Count(h => h.Sick) ?? 0, away = r.Workers.Count(w => w.Away);

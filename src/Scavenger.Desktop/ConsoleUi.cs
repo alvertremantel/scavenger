@@ -1,5 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Templates;
+using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Media;
 
@@ -30,6 +32,7 @@ public static class ConsoleUi
     public static Control Field(string label, Control control)
     {
         ToolTip.SetTip(control, label);
+        control.HorizontalAlignment = HorizontalAlignment.Stretch;
         var stack = new StackPanel { Spacing = 5 }; stack.Children.Add(Eyebrow(label)); stack.Children.Add(control); return stack;
     }
     public static Control PageHeading(string title, string subtitle)
@@ -42,6 +45,23 @@ public static class ConsoleUi
         var bar = new WrapPanel { Orientation = Orientation.Horizontal };
         foreach (var control in controls) { control.Margin = new Thickness(0, 0, 10, 8); bar.Children.Add(control); }
         return bar;
+    }
+    // The deck retains its pages and selection, without a second row of navigation tabs.
+    public static void HideHeaders(TabControl tabs) => tabs.Template = new FuncControlTemplate<TabControl>((t, _) =>
+        new ContentControl { [!ContentControl.ContentProperty] = new Binding("SelectedItem.Content") { Source = t } });
+    public static void Cards(StackPanel panel, string[] headers, IEnumerable<string[]> data)
+    {
+        panel.Children.Clear();
+        foreach (var cells in data)
+        {
+            var card = new StackPanel { Spacing = 5 };
+            card.Children.Add(Text(cells[0], 13, Accent));
+            for (int i = 1; i < cells.Length; i++)
+                if (cells[i] is not ("" or "—")) card.Children.Add(Text(headers[i] + " · " + cells[i], 11, Muted));
+            panel.Children.Add(Frame(card, new Thickness(10)));
+        }
+        if (panel.Children.Count == 0) panel.Children.Add(Text("Nothing queued here.", 12, Muted));
+        panel.Spacing = 8;
     }
     public static void Table(StackPanel panel, string[] headers, string widths, IEnumerable<string[]> data)
     {
