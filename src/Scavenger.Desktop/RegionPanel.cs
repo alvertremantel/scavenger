@@ -26,11 +26,12 @@ public sealed class RegionPanel : UserControl
     {
         _session = session;
         var root = new Grid { RowDefinitions = new RowDefinitions("Auto,*"), RowSpacing = 14 };
-        var title = new StackPanel { Spacing = 4 }; title.Children.Add(ConsoleUi.PageHeading("Regional survey", "Road networks, terrain and recovery sites / select a parcel to inspect.")); title.Children.Add(_heading); root.Children.Add(title);
+        var title = new StackPanel { Spacing = 4 }; title.Children.Add(ConsoleUi.PageHeading("Regional survey", "Drag to pan / wheel to zoom at the cursor / click a parcel or recovery site to inspect.")); title.Children.Add(_heading); root.Children.Add(title);
         var survey = new Grid { RowDefinitions = new RowDefinitions("Auto,*"), RowSpacing = 14 };
         var bar = new WrapPanel { Orientation = Orientation.Horizontal };
         bar.Children.Add(ConsoleUi.Field("Location filter", _type)); bar.Children.Add(ConsoleUi.Field("Survey layer", _layer));
         var zoom = new Button { Name = "RegionZoom", Content = "Zoom +" }; zoom.Click += (_, _) => Map.Zoom(); bar.Children.Add(zoom);
+        var zoomOut = new Button { Name = "RegionZoomOut", Content = "Zoom −" }; zoomOut.Click += (_, _) => Map.ZoomOut(); bar.Children.Add(zoomOut);
         var fit = new Button { Name = "RegionFit", Content = "Fit region" }; fit.Click += (_, _) => Map.Zoom(true); bar.Children.Add(fit);
         foreach (var c in bar.Children) c.Margin = new Thickness(0, 0, 12, 0);
         var settings = ConsoleUi.Frame(bar, new Thickness(14, 10)); survey.Children.Add(settings);

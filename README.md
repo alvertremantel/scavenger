@@ -4,6 +4,7 @@ A playable systems prototype for a compound-management game about scavenging, ch
 repair, logistics, and rebuilding industrial capability after an undecided apocalypse.
 The prototype combines operational tables with a physical 2D compound in Avalonia.
 
+[Play guide](docs/BASIC-PLAYABILITY.md) · [Playability plan](docs/BASIC-PLAYABILITY-PLAN.md) ·
 [Working content outline](docs/CONTENT-OUTLINE.md) · [Engine foundations](docs/ENGINE-FOUNDATIONS.md) ·
 [Physical implementation plan](docs/PHYSICAL-COMPOUND-PLAN.md) · [Physical implementation and verification](docs/PHYSICAL-COMPOUND.md) ·
 [Production/computing plan](docs/PRODUCTION-AND-COMPUTING-PLAN.md) ·
@@ -27,8 +28,8 @@ The project references that local engine checkout directly. It must be available
 [haldane-revision.txt](haldane-revision.txt); the engine remains a separate repository
 and is not yet packaged for distribution. The pinned engine revision includes the
 `Haldane.SupplyChain/Conversions.cs` primitive required by the industrial slice.
-Scavenging and the initial world generator are merged into `main`. Expanded geography
-is on `feature/expanded-regional-geography`; the independent engine checkout remains
+Scavenging, expanded geography and the operator console are merged into `main`.
+Basic playability is on `feature/basic-playability`; the independent engine checkout remains
 on `feature/production-and-scavenged-computing` at the pinned revision.
 
 ## Run
@@ -59,7 +60,9 @@ compact, avenue-led or twin-center town layouts, outlying suburbs, connected roa
 Under **Region**, enter a seed to generate a fresh world, click a site to inspect its stock
 and road route, then use **Plan expedition here**. Click any cell for mixed terrain
 percentages, elevation, moisture, flood susceptibility and roughness; switch map layers
-and zoom around the selected cell. Layout can be selected or chosen by the seed. Under **Compound → Scavenging**, select a team, destination and source
+and drag to pan or wheel to zoom around the cursor. Zoom-out and Fit controls are also
+available. Layout can be selected or chosen by the seed. **Overview** offers guided supply plans.
+Under **Expeditions**, select a team, destination and source
 objects; dispatch, respond to field incidents, recall, and receive actual cargo. Recover
 pharmacy supplies and hardware sorbent, then refine/formulate the fictional treatment
 at the clinic. See [the expedition walkthrough](docs/SCAVENGING.md) for quantities,
@@ -86,8 +89,9 @@ seeded scenario. See [the console design and validation notes](docs/OPERATOR-CON
 In **Compound**, choose a map tool and click a site, or
 inspect an existing fixture. Room zones use two interior corners. Right-click
 inspects without placing. The inspector supports door operation, repair, cancellation,
-and power/water/data conduit isolation; **Damage** is a prototype testing control. Accepted actions advance
-one tick. **Step**, **+12 ticks**, **+1 day**, **Until decision**, and **Run** control time explicitly.
+and power/water/data conduit isolation; **Damage** is a prototype testing control. Accepted orders advance
+one tick; navigation and supply suggestions do not. **Step**, **+12 ticks**, **+1 day**, **Until decision**, and **Run** control time explicitly.
+Normal time advances stop at pending field decisions, new warnings and completions.
 Save/load uses `saves/compound.json`. The screenshot mode uses actual Avalonia controls
 and Skia rendering without requiring a display server. For example:
 

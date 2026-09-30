@@ -39,7 +39,7 @@ public sealed class CompoundMapControl : Control
     }
     private Rect CellRect(CellPosition p) => new(Offset.X + p.X * Scale, Offset.Y + p.Y * Scale, Scale, Scale);
     private Rect AreaRect(GridRect area) => new(Offset.X + area.X * Scale, Offset.Y + area.Y * Scale, area.Width * Scale, area.Height * Scale);
-    private static IBrush Brush(string color) => new SolidColorBrush(Color.Parse(color));
+    private static IBrush Brush(string color) => new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.Parse(color));
     private static readonly IBrush[] WorkerColors = [Brush("#90DAA0"), Brush("#F1CE77"), Brush("#B69FEA"), Brush("#EEA1AD")];
     private static IBrush WorkerColor(int id) => WorkerColors[(int)((uint)(id - 1) % (uint)WorkerColors.Length)];
     private static void Text(DrawingContext context, string value, Point point, IBrush color, double size = 11)
@@ -99,9 +99,16 @@ public sealed class CompoundMapControl : Control
         foreach (var path in report.Paths.Where(p => p.Cells.Count > 1))
             for (int i = 1; i < path.Cells.Count; i++)
                 context.DrawLine(new Pen(WorkerColor(path.WorkerId), 1.5, DashStyle.Dot, PenLineCap.Round), CellCenter(path.Cells[i - 1]), CellCenter(path.Cells[i]));
-        foreach (var worker in report.Workers.Where(w => !w.Away))
+        foreach (var group in report.Workers.Where(w => !w.Away).GroupBy(w => w.Position))
+        foreach (var worker in group)
         {
             var center = CellCenter(worker.Position);
+            if (group.Count() > 1)
+            {
+                int index = group.OrderBy(w => w.Id).ToList().FindIndex(w => w.Id == worker.Id);
+                double angle = index * 2 * Math.PI / group.Count();
+                center += new Vector(Math.Cos(angle) * Scale * .22, Math.Sin(angle) * Scale * .22);
+            }
             context.DrawEllipse(WorkerColor(worker.Id), new Pen(Brush("#161D21"), 1.5), center, Scale * .27, Scale * .27);
             Text(context, worker.Id.ToString(CultureInfo.InvariantCulture), center - new Vector(3, 6), Brush("#161D21"), 10);
             if (worker.Carrying) context.DrawRectangle(Brush("#F6DDA2"), new Pen(Brush("#161D21"), 1), new Rect(center.X + 4, center.Y + 2, 7, 7));

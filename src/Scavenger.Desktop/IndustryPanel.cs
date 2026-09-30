@@ -31,7 +31,7 @@ public sealed class IndustryPanel : UserControl
     private readonly NumericUpDown _targetKg = new() { Name = "StockTarget", Minimum = .1m, Maximum = 20, Increment = .1m, Value = 1.6m, Width = 100, FormatString = "0.00" };
     public event Action<string>? Navigate;
     public TabControl Tabs { get; } = new() { Name = "IndustryTabs" };
-    public ListBox ComponentSelector { get; } = new() { Name = "ComponentSelector", SelectionMode = SelectionMode.Multiple, Height = 210 };
+    public ListBox ComponentSelector { get; } = new() { Name = "ComponentSelector", SelectionMode = SelectionMode.Multiple | SelectionMode.Toggle, Height = 210 };
     public IndustryPanel(GameSession session)
     {
         _session = session;
@@ -78,10 +78,10 @@ public sealed class IndustryPanel : UserControl
         var energy = Page("Energy", "EnergyTab");
         energy.Children.Add(Text("Each tick is 15 minutes. Fuel generation, network priority, battery charge and losses are accounted in kW and kWh. A powered computer draws idle power plus claimed workloads through its PSU.", 12));
         energy.Children.Add(Bar(Button("Start / stop generator", ToggleGenerator, "GeneratorButton"), Button("Connect / isolate battery", ToggleBattery, "BatteryButton"),
-            Button("Deliver 6 kg diesel", Refuel, "RefuelButton")));
+            Button("Refuel from depot (up to 6 kg)", Refuel, "RefuelButton")));
         energy.Children.Add(ConsoleUi.Section("Energy balance", _energy)); AddTable(energy, "Power");
         var transfers = Page("Transfers", "TransfersTab");
-        transfers.Children.Add(Text("Move bulk supplies, whole components, or leftover worksite stock. Deliver steel to the workshop for fixture repairs; fuel to the generator tank; effluent to the waste store.", 12));
+        transfers.Children.Add(Text("Move bulk supplies, whole components, or leftover worksite stock. Deliver fuel to the generator tank and effluent to the waste store; repair orders use depot materials.", 12));
         transfers.Children.Add(Bar(_batch, _destination, _carrier, _transferKg, _wholeUnit, Button("Dispatch transfer", Transfer, "TransferButton")));
         transfers.Children.Add(Bar(_haul, Button("Cancel unloaded haul", () => SubmitSelected(_haul, id => new CancelHaulCommand(id)), "CancelTransferButton")));
         AddTable(transfers, "Transfers");
@@ -148,8 +148,9 @@ public sealed class IndustryPanel : UserControl
     private void Refuel()
     {
         var inventory = _session.World.Module<InventoryModule>();
-        var batch = inventory.Batches.FirstOrDefault(b => b.MaterialId == "fuel.diesel" && b.StockpileId == "salvage" && inventory.AvailableKg(b.Id) >= 6);
-        if (batch is not null) _session.Submit(new QueuePhysicalHaulCommand(new(_session.NextId("refuel"), batch.Id, "refuel-route", 2, 6)));
+        var batch = inventory.Batches.Where(b => b.MaterialId == "fuel.diesel" && b.StockpileId == "salvage" && inventory.AvailableKg(b.Id) >= .001m).OrderByDescending(b => inventory.AvailableKg(b.Id)).FirstOrDefault();
+        if (batch is null) { _session.Notify("No usable diesel remains in the depot. Plan a generator-fuel expedition."); return; }
+        _session.Submit(new QueuePhysicalHaulCommand(new(_session.NextId("refuel"), batch.Id, "refuel-route", 2, Math.Min(6, inventory.AvailableKg(batch.Id)))));
     }
     private void Transfer()
     {
@@ -205,7 +206,9 @@ public sealed class IndustryPanel : UserControl
         _machine.Text = $"{machine.Id}: {(machine.Powered ? "powered on" : "off")} · {machine.Components.Count} installed units · RAM {machine.RamGiB} GiB · VRAM {machine.VramGiB} GiB · disk {machine.UsedStorageGiB:0.000} / {machine.StorageGiB} GiB · requested {machine.RequestedKw:0.000} kW\n{machine.HardwareReason ?? "Compatible diagnosed assembly"}";
         _dataset.Text = $"Telemetry {computing.Samples.Count} records · labelled training {report.LabelledTrainingRecords} / 24 minimum · held-out {report.LabelledHeldOutRecords} / 8 minimum · learned: {string.Join(", ", computing.Knowledge.Select(k => $"worker {k.WorkerId}: {k.Capability}"))}";
         var frame = energy.LastFrame;
-        _energy.Text = $"Available diesel {report.FuelAvailableKg:0.00} kg · spent fuel {energy.SpentFuelKg:0.00} kg · battery {energy.Batteries.Sum(b => b.StoredKwh):0.000} / {energy.Batteries.Sum(b => b.Plan.CapacityKwh)} kWh\nLast interval: requested {frame?.RequestedKw ?? 0:0.000} kW / served {frame?.ServedKw ?? 0:0.000} kW · generated {frame?.GeneratedKwh ?? 0:0.000} kWh · used {frame?.UsedKwh ?? 0:0.000} kWh\nLifetime: generated {energy.GeneratedKwh:0.000} kWh · used {energy.UsedKwh:0.000} kWh · conversion losses {energy.LossKwh:0.000} kWh";
+        decimal tankFuel = inventory.Batches.Where(b => b.MaterialId == "fuel.diesel" && b.StockpileId == "generator-tank").Sum(b => inventory.AvailableKg(b.Id));
+        decimal depotFuel = inventory.Batches.Where(b => b.MaterialId == "fuel.diesel" && b.StockpileId == "salvage").Sum(b => inventory.AvailableKg(b.Id));
+        _energy.Text = $"Tank {tankFuel:0.00} kg / depot {depotFuel:0.00} kg free diesel. Deliver depot fuel to keep equipment running; Refuel handles partial batches; Store transfers allows custom quantities.\nAvailable diesel {report.FuelAvailableKg:0.00} kg · spent fuel {energy.SpentFuelKg:0.00} kg · battery {energy.Batteries.Sum(b => b.StoredKwh):0.000} / {energy.Batteries.Sum(b => b.Plan.CapacityKwh)} kWh\nLast interval: requested {frame?.RequestedKw ?? 0:0.000} kW / served {frame?.ServedKw ?? 0:0.000} kW · generated {frame?.GeneratedKwh ?? 0:0.000} kWh · used {frame?.UsedKwh ?? 0:0.000} kWh\nLifetime: generated {energy.GeneratedKwh:0.000} kWh · used {energy.UsedKwh:0.000} kWh · conversion losses {energy.LossKwh:0.000} kWh";
         Table("Orders", "2*,2*,*,*,2*", ["Standing order", "Material", "Target kg", "Covered kg", "State"], report.Orders.Select(o => new[] { o.Id, o.Material, $"{o.TargetKg:0.##}", $"{o.CoveredKg:0.##}", o.Enabled ? o.Reason ?? "Maintaining" : "Paused" }));
         Table("Recipes", "2*,3*,3*,*,*", ["Recipe", "Inputs / purity", "Products + waste", "Effort", "Active kW"], production.Recipes.Select(r => new[] { r.Name, string.Join(" + ", r.Inputs.Select(i => $"{i.QuantityKg} kg {i.MaterialId} ≥{i.MinimumPurity:P0}{(r.InputGrades.TryGetValue(i.MaterialId, out var grade) ? $" / {grade}" : "")}{(r.RejectContaminatedInputs ? " / no known contamination" : "")}")), string.Join(" + ", r.Outputs.Select(o => $"{o.QuantityKg} kg {o.MaterialId}")), r.Effort.ToString(), r.PowerKw.ToString() }));
         Table("Production", "2*,*,*,*,3*", ["Batch", "State", "Operator", "Effort", "Blocker / local staging"], production.Jobs.TakeLast(100).Select(j => new[] { j.Plan.Id, j.Status.ToString(), j.Plan.Automatic ? "Controller" : $"Worker {j.Plan.OperatorId}", $"{j.EffortCompleted:0.##}/{production.Recipe(j.Plan.RecipeId)!.Effort}", j.BlockedReason ?? j.Site.LocalStoreId }));

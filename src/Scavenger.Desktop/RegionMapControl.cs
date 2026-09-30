@@ -9,26 +9,54 @@ namespace Scavenger.Desktop;
 
 public sealed class RegionMapControl : Control
 {
+    public RegionMapControl() => Cursor = new Cursor(StandardCursorType.Hand);
     private RegionModule? _region;
     private string? _selected;
     private MapLayer _layer;
     private IBrush[]? _cellColors;
     private double _zoom = 1;
-    private RegionPoint? _focus;
+    private Point? _center;
+    private IPointer? _dragPointer;
+    private Point _press, _pressCenter;
+    private bool _dragging;
+    public double ZoomLevel => _zoom;
     public RegionPoint? SelectedCell { get; private set; }
     public MapLayer Layer { get => _layer; set { _layer = value; _cellColors = null; InvalidateVisual(); } }
-    public void Zoom(bool fit = false) { _zoom = fit ? 1 : Math.Min(8, _zoom * 2); _focus = SelectedCell ?? Region?.Compound; InvalidateVisual(); }
-    public RegionModule? Region { get => _region; set { if (_region != value) { _cellColors = null; _zoom = 1; _focus = null; SelectedCell = null; } _region = value; InvalidateVisual(); } }
+    public void Zoom(bool fit = false)
+    {
+        if (fit) { _zoom = 1; _center = null; }
+        else
+        {
+            _zoom = Math.Min(16, _zoom * 2);
+            _center = SelectedCell is { } p ? new Point(p.X + .5, p.Y + .5) : Center;
+        }
+        InvalidateVisual();
+    }
+    public void ZoomOut() => ZoomAt(new Point(Bounds.Width / 2, Bounds.Height / 2), .5);
+    public RegionModule? Region { get => _region; set { if (_region != value) { EndDrag(); _cellColors = null; _zoom = 1; _center = null; SelectedCell = null; SelectedSite = null; } _region = value; InvalidateVisual(); } }
     public string? SelectedSite { get => _selected; set { _selected = value; InvalidateVisual(); } }
     public string? HighlightType { get; set; }
     public event Action<string>? SiteClicked;
     public event Action<RegionPoint>? CellClicked;
     private double Scale => Region is null ? 1 : Math.Max(.1, Math.Min((Bounds.Width - 36) / Region.Width, (Bounds.Height - 64) / Region.Height)) * _zoom;
-    private Point Offset => Region is null ? default : _zoom > 1 && _focus is { } p
-        ? new(Bounds.Width / 2 - (p.X + .5) * Scale, Bounds.Height / 2 - (p.Y + .5) * Scale)
-        : new((Bounds.Width - Region.Width * Scale) / 2, (Bounds.Height - Region.Height * Scale) / 2);
+    private Point Center => _center ?? new Point((Region?.Width ?? 0) / 2.0, (Region?.Height ?? 0) / 2.0);
+    private Point Offset => new(Bounds.Width / 2 - Center.X * Scale, Bounds.Height / 2 - Center.Y * Scale);
     public Point ParcelCenter(RegionPoint p) => Offset + new Vector((p.X + .5) * Scale, (p.Y + .5) * Scale);
-    private static IBrush Brush(string s) => new SolidColorBrush(Color.Parse(s));
+    private void ZoomAt(Point anchor, double factor)
+    {
+        if (Region is null || _dragPointer is not null) return;
+        var world = new Point((anchor.X - Offset.X) / Scale, (anchor.Y - Offset.Y) / Scale);
+        _zoom = Math.Clamp(_zoom * factor, 1, 16);
+        _center = _zoom == 1 ? null : new Point(world.X - (anchor.X - Bounds.Width / 2) / Scale,
+            world.Y - (anchor.Y - Bounds.Height / 2) / Scale);
+        InvalidateVisual();
+    }
+    private void EndDrag()
+    {
+        var pointer = _dragPointer; _dragPointer = null; _dragging = false;
+        pointer?.Capture(null); Cursor = new Cursor(StandardCursorType.Hand);
+    }
+    private static IBrush Brush(string s) => new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.Parse(s));
     private static readonly IBrush Ink = Brush("#161D21"), Roads = Brush("#7F8C86"), Gold = Brush("#C8AA7C");
     private static void Text(DrawingContext c, string value, Point p, IBrush brush, double size)
         => c.DrawText(new FormattedText(value, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Inter"), size, brush), p);
@@ -36,8 +64,34 @@ public sealed class RegionMapControl : Control
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
-        if (Region is null) return;
+        var properties = e.GetCurrentPoint(this).Properties;
+        if (Region is null || !properties.IsLeftButtonPressed && !properties.IsMiddleButtonPressed) return;
+        _dragPointer = e.Pointer; _press = e.GetPosition(this); _pressCenter = Center;
+        _dragging = properties.IsMiddleButtonPressed;
+        e.Pointer.Capture(this); Cursor = new Cursor(StandardCursorType.SizeAll); e.Handled = true;
+    }
+    protected override void OnPointerMoved(PointerEventArgs e)
+    {
+        base.OnPointerMoved(e);
+        if (_dragPointer != e.Pointer) return;
+        var current = e.GetPosition(this);
+        var delta = new Vector(current.X - _press.X, current.Y - _press.Y);
+        if (!_dragging && delta.Length < 4) return;
+        _dragging = true;
+        // Keep some of the region on screen even after a long captured drag.
+        _center = new Point(Math.Clamp(_pressCenter.X - delta.X / Scale, 0, Region!.Width),
+            Math.Clamp(_pressCenter.Y - delta.Y / Scale, 0, Region.Height));
+        InvalidateVisual(); e.Handled = true;
+    }
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    {
+        base.OnPointerReleased(e);
+        if (_dragPointer != e.Pointer) return;
         var p = e.GetPosition(this);
+        bool select = !_dragging && e.InitialPressMouseButton == MouseButton.Left
+            && Distance(_press, p) < 4 && new Rect(Bounds.Size).Contains(p);
+        EndDrag(); e.Handled = true;
+        if (!select || Region is null) return;
         var cell = new RegionPoint((int)Math.Floor((p.X - Offset.X) / Scale), (int)Math.Floor((p.Y - Offset.Y) / Scale));
         if (!Region.Contains(cell)) return;
         SelectedCell = cell;
@@ -45,7 +99,18 @@ public sealed class RegionMapControl : Control
         if (selected is not null && Distance(ParcelCenter(selected.Parcel), p) <= Math.Max(3, Scale * .6))
         { SelectedCell = selected.Parcel; SelectedSite = selected.LocationId; SiteClicked?.Invoke(selected.LocationId); }
         else { SelectedSite = null; CellClicked?.Invoke(cell); }
-        InvalidateVisual(); e.Handled = true;
+        InvalidateVisual();
+    }
+    protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
+    {
+        base.OnPointerCaptureLost(e);
+        _dragPointer = null; _dragging = false; Cursor = new Cursor(StandardCursorType.Hand);
+    }
+    protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
+    {
+        base.OnPointerWheelChanged(e);
+        if (Region is null || e.Delta.Y == 0) return;
+        ZoomAt(e.GetPosition(this), Math.Pow(1.2, e.Delta.Y)); e.Handled = true;
     }
     public override void Render(DrawingContext context)
     {

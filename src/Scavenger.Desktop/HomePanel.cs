@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
+using Haldane.CareerSim.Work;
 using Haldane.SupplyChain;
 using Scavenger.Sim.Physical;
 using Scavenger.Sim.Industry;
@@ -47,6 +48,30 @@ public sealed class HomePanel : UserControl
             Metric("Field teams", $"{scavenging?.Expeditions.Count(e => e.Active) ?? 0:00}", $"{region?.Sites.Count ?? scavenging?.Locations.Count ?? 0} mapped recovery sites"),
             Metric("Power delivered", energy?.LastFrame is { } f ? $"{f.ServedKw:0.00} kW" : "—", energy?.LastFrame is { } frame ? $"{frame.RequestedKw:0.00} kW requested · last interval" : "Awaiting first operating interval")];
         for (int i = 0; i < cards.Length; i++) { Grid.SetColumn(cards[i], i); metrics.Children.Add(cards[i]); } _body.Children.Add(metrics);
+        if (energy is not null)
+        {
+            var inventory = world.Module<InventoryModule>();
+            decimal tank = inventory.Batches.Where(b => b.MaterialId == "fuel.diesel" && b.StockpileId == "generator-tank").Sum(b => inventory.AvailableKg(b.Id));
+            if (tank < 3) _body.Children.Add(Section("Generator tank low", Bar(Text($"{tank:0.00} kg in tank. Depot fuel needs a physical delivery.", 12, Warning),
+                Button("Refuel generator →", () => Navigate?.Invoke("industry/4"), "FuelReserveButton", true))));
+        }
+        if (scavenging is not null)
+        {
+            var priorities = new StackPanel { Spacing = 12 };
+            var medicine = world.Module<InventoryModule>().Batches.Where(b => b.StockpileId == "clinic" && ScavengingModule.ReleasedMedicine(b)).Sum(b => b.QuantityKg);
+            var fieldJobs = scavenging.Expeditions;
+            priorities.Children.Add(Text("01 / Restore the crew", 13, Accent));
+            priorities.Children.Add(Text(sick == 0 ? "All residents are well. Clinic treatment completed." : $"{sick} resident(s) ill. Recover pharmacy inputs and hardware sorbent, refine → formulate → treat. Each batch makes 1 kg, enough for ten treatments."));
+            priorities.Children.Add(Bar(Link("Plan pharmacy supplies", "plan/pharmacy"), Link("Plan clinic sorbent", "plan/sorbent"), Link("Clinic / treatment →", "clinic", true)));
+            priorities.Children.Add(Text("02 / Keep supplies moving", 13, Accent));
+            priorities.Children.Add(Text($"{fieldJobs.Count(e => !e.Active)} teams have returned. Protect crews; review finite stock and structural access before every run. Pending field decisions pause normal time controls."));
+            priorities.Children.Add(Bar(Link("Plan generator fuel", "plan/fuel"), Link("Plan building materials", "plan/materials"), Link("Manage field teams →", "fieldteams")));
+            priorities.Children.Add(Text("03 / Rebuild capacity", 13, Accent));
+            priorities.Children.Add(Text($"Clinic reserve: {medicine:0.###} kg. Start HDPE recovery orders after medical care, build storage or a workbench, then recover and service computer parts. Ivo handles deliveries; competing jobs share his time."));
+            priorities.Children.Add(Bar(Link("Production & stock orders →", "industry/0"), Link("Build & repair →", "compound")));
+            priorities.Children.Add(Text("Time is paused until you advance it. Workers walk and carry supplies automatically. Run advances one 15-minute interval every 0.2 seconds; Step lets you watch individual movements. +1 day can stop early for work, power or field events.", 11, Muted));
+            _body.Children.Add(Section("Opening priorities", priorities));
+        }
         var middle = new Grid { ColumnDefinitions = new ColumnDefinitions("3*,2*"), ColumnSpacing = 16 };
         var attention = new StackPanel { Spacing = 10 };
         if (scavenging is not null)
@@ -54,7 +79,7 @@ public sealed class HomePanel : UserControl
             var patients = scavenging.Health.Where(h => h.Sick).ToArray();
             if (patients.Length > 0) attention.Children.Add(Alert("CARE REQUIRED", $"Unavailable for duty: {string.Join(", ", patients.Select(h => r.Workers.Single(w => w.Id == h.WorkerId).Name))}.", "Open clinic →", "clinic"));
             var decisions = scavenging.Expeditions.Where(e => e.Status == ExpeditionStatus.Decision).ToArray();
-            if (decisions.Length > 0) attention.Children.Add(Alert("FIELD DECISION", $"{decisions.Length} teams waiting · {decisions[0].Reason}", "Review team →", "scavenging"));
+            if (decisions.Length > 0) attention.Children.Add(Alert("FIELD DECISION", $"{decisions.Length} teams waiting · {decisions[0].Reason}", "Review team →", "fieldteams"));
         }
         if (production is not null)
         {
@@ -66,6 +91,8 @@ public sealed class HomePanel : UserControl
             var waiting = computing.Jobs.Where(j => j.Active && j.BlockedReason is not null).ToArray();
             if (waiting.Length > 0) attention.Children.Add(Alert("COMPUTING CONSTRAINT", $"{waiting.Length} tasks waiting · {waiting[0].BlockedReason}", "Review compute →", "industry/3"));
         }
+        var assignments = world.Module<ProjectBoardModule>().Projects.Where(p => !p.Completed && p.AssignedStaffIds.Count > 0).ToArray();
+        if (assignments.Length > 0) attention.Children.Add(Alert("PROJECT DUTY", "Experimental projects occupy workers until completed or released. Clinic preparation produces no medicine.", "Release assignments →", "compound"));
         var hauls = r.Inventory.Hauls.Where(h => h.Status is not (HaulStatus.Delivered or HaulStatus.Cancelled) && h.BlockedReason is not null).ToArray();
         var builds = r.Construction.Where(b => b.Status is not (ConstructionStatus.Completed or ConstructionStatus.Cancelled) && b.BlockedReason is not null).ToArray();
         if (hauls.Length + builds.Length > 0) attention.Children.Add(Alert("WORK QUEUE CONSTRAINT", $"{hauls.Length} hauls and {builds.Length} build jobs waiting · {hauls.FirstOrDefault()?.BlockedReason ?? builds.First().BlockedReason}", "Review jobs →", "register/3"));

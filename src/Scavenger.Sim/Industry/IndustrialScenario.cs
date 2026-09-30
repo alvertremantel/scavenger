@@ -34,6 +34,8 @@ public static class IndustrialScenario
         inventory.AddStockpile(new Stockpile("waste", "Waste and byproduct store", 200, new CellPosition(6, 14)))
             .AddStockpile(new Stockpile("electronics-cache", "Unexamined electronics cache", 50, new CellPosition(2, 12)))
             .AddStockpile(new Stockpile("generator-tank", "Generator fuel tank", 100, new CellPosition(7, 10)));
+        world.Module<LogisticsModule>().AddRoute(new TransportRoute("refuel-route", "salvage", "generator-tank", 1, 6,
+            new("hauling", 20), usesWorldMovement: true));
         inventory.AddBatch(new MaterialBatch("process-water", "water.clean", "salvage", leanSupplies ? 6 : 20, new BatchQuality(1, "process water / not medical")))
             .AddBatch(new MaterialBatch("depot-diesel", "fuel.diesel", "salvage", leanSupplies ? 8 : 40, new BatchQuality(.99m, "generator fuel")))
             .AddBatch(new MaterialBatch("tank-diesel", "fuel.diesel", "generator-tank", leanSupplies ? 12 : 80, new BatchQuality(.99m, "generator fuel")));
@@ -161,9 +163,10 @@ public static class IndustrialScenario
     }
     public static void QueueRecoveryOrders(Scheduler scheduler)
     {
-        if (scheduler.World.Module<OrdersModule>().Orders.Count > 0) return;
+        var orders = scheduler.World.Module<OrdersModule>();
         foreach (var recipe in scheduler.World.Module<ProductionModule>().Recipes.Where(r => r.Id is "wash-hdpe" or "dry-hdpe" or "shred-hdpe" or "mould-clips"))
         {
+            if (orders.Orders.Any(o => o.Plan.Template.RecipeId == recipe.Id)) continue;
             var primary = recipe.Outputs.First(o => !o.Waste);
             decimal target = recipe.Id == "mould-clips" ? 1.6m : primary.QuantityKg;
             scheduler.Queue(new AddStockOrderCommand(new StockOrderPlan(recipe.Id, ProcessPlan("template", recipe.Id), primary.MaterialId, target)));

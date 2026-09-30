@@ -155,7 +155,7 @@ public class CompoundWindowTests
                 Click(window, Find<Button>(window, "DispatchExpeditionButton"));
                 Assert.Single(window.Session.World.Module<ScavengingModule>().Expeditions);
                 FinishExpeditions();
-                SelectChoice(window, "ExpeditionLocation", "hardware"); SelectSalvage("filter-sorbent");
+                window.Navigate("scavenging"); SelectChoice(window, "ExpeditionLocation", "hardware"); SelectSalvage("filter-sorbent");
                 Find<NumericUpDown>(window, "SalvageQuantity").Value = .1m;
                 Click(window, Find<Button>(window, "DispatchExpeditionButton")); FinishExpeditions();
                 window.Navigate("clinic"); Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
@@ -170,6 +170,7 @@ public class CompoundWindowTests
                 using var bytes = new MemoryStream(); frame.Save(bytes, PngBitmapEncoderOptions.Default); Assert.True(bytes.Length > 15000);
                 void SelectSalvage(params string[] ids)
                 {
+                    window.Navigate("scavenging");
                     var selector = window.Scavenging.SalvageSelector; selector.SelectedItems!.Clear();
                     foreach (var c in selector.Items.Cast<Choice>().Where(c => ids.Contains(c.Id))) selector.SelectedItems.Add(c);
                     Dispatcher.UIThread.RunJobs();
@@ -217,6 +218,7 @@ public class CompoundWindowTests
                 var salvage = window.Scavenging.SalvageSelector;
                 salvage.SelectedItems!.Add(salvage.Items.Cast<Choice>().Single(c => c.Id == "stock-sealed"));
                 Find<NumericUpDown>(window, "SalvageQuantity").Value = .1m;
+                Assert.True(Find<Button>(window, "DispatchExpeditionButton").IsEnabled, Find<TextBlock>(window, "ExpeditionReadiness").Text);
                 Click(window, Find<Button>(window, "DispatchExpeditionButton"));
                 Assert.Single(window.Session.World.Module<ScavengingModule>().Expeditions);
                 string saved = window.Session.SaveJson(); window.Session.Advance(4); window.Session.LoadJson(saved);
@@ -260,6 +262,62 @@ public class CompoundWindowTests
         }, CancellationToken.None);
     }
     [Fact]
+    public async Task RegionWheelAnchorsTheCursorAndCapturedDragsDoNotSelectSites()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(RenderAppBuilder));
+        await session.Dispatch(() =>
+        {
+            var window = new MainWindow { Width = 1050, Height = 780 }; window.Show();
+            try
+            {
+                window.Navigate("region"); Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
+                var map = window.Region.Map;
+                var parcel = new RegionPoint(60, 64);
+                Point OnWindow(Point local) => map.TranslatePoint(local, window)!.Value;
+                double Length(Point p) => Math.Sqrt(p.X * p.X + p.Y * p.Y);
+                var anchor = map.ParcelCenter(parcel);
+                window.MouseWheel(OnWindow(anchor), new Vector(0, 3), RawInputModifiers.None);
+                Dispatcher.UIThread.RunJobs();
+                Assert.Equal(Math.Pow(1.2, 3), map.ZoomLevel, 8);
+                Assert.InRange(Length(map.ParcelCenter(parcel) - anchor), 0, .000001);
+                var selected = map.SelectedSite;
+                int selections = 0; map.SiteClicked += _ => selections++; map.CellClicked += _ => selections++;
+                var start = new Point(map.Bounds.Width / 2, map.Bounds.Height / 2);
+                var delta = new Vector(75, 36);
+                var before = map.ParcelCenter(parcel);
+                window.MouseDown(OnWindow(start), MouseButton.Left, RawInputModifiers.None);
+                window.MouseMove(OnWindow(start + delta), RawInputModifiers.LeftMouseButton);
+                window.MouseUp(OnWindow(start + delta), MouseButton.Left, RawInputModifiers.None);
+                Dispatcher.UIThread.RunJobs();
+                Assert.InRange(Length(map.ParcelCenter(parcel) - before - delta), 0, .000001);
+                Assert.Equal(selected, map.SelectedSite); Assert.Equal(0, selections);
+                // Capture continues outside the map; releasing there must never inspect a parcel.
+                window.MouseDown(OnWindow(start), MouseButton.Left, RawInputModifiers.None);
+                window.MouseMove(OnWindow(new Point(-25, start.Y)), RawInputModifiers.LeftMouseButton);
+                window.MouseUp(OnWindow(new Point(-25, start.Y)), MouseButton.Left, RawInputModifiers.None);
+                Assert.Equal(0, selections);
+                Click(window, Find<Button>(window, "RegionFit")); Assert.Equal(1, map.ZoomLevel);
+                var site = map.Region!.Sites.First();
+                window.MouseDown(OnWindow(map.ParcelCenter(site.Parcel)), MouseButton.Left, RawInputModifiers.None);
+                window.MouseUp(OnWindow(map.ParcelCenter(site.Parcel)), MouseButton.Left, RawInputModifiers.None);
+                Assert.Equal(site.LocationId, map.SelectedSite); Assert.Equal(1, selections);
+                window.MouseWheel(OnWindow(start), new Vector(0, 100), RawInputModifiers.None);
+                Assert.Equal(16, map.ZoomLevel);
+                Click(window, Find<Button>(window, "RegionZoomOut")); Assert.Equal(8, map.ZoomLevel);
+                window.MouseWheel(OnWindow(start), new Vector(0, -100), RawInputModifiers.None);
+                Assert.Equal(1, map.ZoomLevel);
+                Assert.InRange(Length(map.ParcelCenter(parcel) - anchor), 0, .000001);
+                // Inspect a rendered view after mouse navigation rather than only its geometry.
+                window.MouseWheel(OnWindow(start), new Vector(0, 5), RawInputModifiers.None);
+                Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
+                using var frame = window.CaptureRenderedFrame(); Assert.NotNull(frame);
+                if (Environment.GetEnvironmentVariable("SCAVENGER_UI_ARTIFACT_DIR") is { Length: > 0 } path)
+                { Directory.CreateDirectory(path); frame.Save(Path.Combine(path, "playable-region-navigation.png"), PngBitmapEncoderOptions.Default); }
+            }
+            finally { window.Close(); }
+        }, CancellationToken.None);
+    }
+    [Fact]
     public async Task HomeLinksRailAndKeyboardReachWorkspacesWithoutAdvancingAndRetainSelections()
     {
         using var session = HeadlessUnitTestSession.StartNew(typeof(RenderAppBuilder));
@@ -274,7 +332,7 @@ public class CompoundWindowTests
                 decimal mass = window.Session.Report.TotalTrackedKg;
                 Click(window, Find<Button>(window, "AttentionclinicButton"));
                 Assert.Equal(3, window.WorkspaceTabs.SelectedIndex); Assert.Equal(1, window.Scavenging.Tabs.SelectedIndex);
-                Assert.Contains(window.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == "Ill / unavailable");
+                Assert.Contains(window.GetVisualDescendants().OfType<TextBlock>(), t => t.Text?.Contains("Mira · Ill / unavailable", StringComparison.Ordinal) == true);
                 Click(window, Find<Button>(window, "NavOverviewButton"));
                 Click(window, Find<Button>(window, "Homeindustry4Button"));
                 Assert.Equal(4, window.WorkspaceTabs.SelectedIndex); Assert.Equal(4, window.Industry.Tabs.SelectedIndex);
@@ -380,6 +438,162 @@ public class CompoundWindowTests
             finally { window.Close(); }
         }, CancellationToken.None);
     }
+    [Fact]
+    public async Task PlainClicksToggleCrewAndCustomCargoAndIndividualAmountsReachTheOrder()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(RenderAppBuilder));
+        await session.Dispatch(() =>
+        {
+            var window = new MainWindow(generated: false) { Width = 1050, Height = 780 }; window.Show();
+            try
+            {
+                window.Navigate("scavenging");
+                Click(window, Find<Button>(window, "PlanPharmacyButton"));
+                var team = window.Scavenging.TeamSelector;
+                var ivo = team.GetRealizedContainers().OfType<ListBoxItem>().Single(c => c.Content is Choice choice && choice.Id == "2");
+                Click(window, ivo);
+                Assert.Contains(team.SelectedItems!.Cast<Choice>(), c => c.Id == "2");
+                Assert.Contains(team.SelectedItems!.Cast<Choice>(), c => c.Id == "4");
+                Click(window, ivo);
+                Assert.DoesNotContain(team.SelectedItems!.Cast<Choice>(), c => c.Id == "2");
+                var cargo = window.Scavenging.SalvageSelector;
+                var stock = cargo.GetRealizedContainers().OfType<ListBoxItem>().Single(c => c.Content is Choice choice && choice.Id == "stock-sealed");
+                Click(window, stock); Assert.DoesNotContain(cargo.SelectedItems!.Cast<Choice>(), c => c.Id == "stock-sealed");
+                Click(window, stock); Assert.Contains(cargo.SelectedItems!.Cast<Choice>(), c => c.Id == "stock-sealed");
+                Find<NumericUpDown>(window, "CargoKg_stock_sealed").Value = .2m;
+                Click(window, Find<Button>(window, "DispatchExpeditionButton"));
+                var order = Assert.Single(window.Session.World.Module<ScavengingModule>().Expeditions).Plan;
+                Assert.Equal(.2m, order.Manifest.Single(m => m.SalvageId == "stock-sealed").QuantityKg);
+                Assert.Equal(.12m, order.Manifest.Single(m => m.SalvageId == "excipient").QuantityKg);
+            }
+            finally { window.Close(); }
+        }, CancellationToken.None);
+    }
+    [Fact]
+    public async Task GeneratedWorldIsPlayableForSeveralDaysUsingOnlyPlayerControls()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(RenderAppBuilder));
+        await session.Dispatch(() =>
+        {
+            var window = new MainWindow { Width = 1050, Height = 780, SavePath = Path.Combine(Path.GetTempPath(), "playability-" + Guid.NewGuid() + ".json") }; window.Show();
+            try
+            {
+                decimal mass = window.Session.Report.TotalTrackedKg;
+                window.Navigate("compound");
+                long freshTick = window.Session.World.Clock.Tick;
+                Click(window, Find<Button>(window, "ClinicButton"));
+                Assert.Equal(freshTick, window.Session.World.Clock.Tick);
+                Assert.False(window.Session.World.Module<Haldane.CareerSim.Work.ProjectBoardModule>().IsAssigned(4));
+                Assert.False(Find<Button>(window, "RefineMedicineButton").IsEnabled);
+                window.Navigate("home");
+                Click(window, Find<Button>(window, "HomeplanpharmacyButton"));
+                Assert.Equal(.1m, Find<NumericUpDown>(window, "CargoKg_stock_sealed").Value);
+                Assert.Equal(.12m, Find<NumericUpDown>(window, "CargoKg_excipient").Value);
+                Assert.Equal(.8m, Find<NumericUpDown>(window, "CargoKg_sterile_water").Value);
+                Capture("pharmacy-plan");
+                var before = window.Session.Report.Workers.ToDictionary(w => w.Id, w => w.Position);
+                Click(window, Find<Button>(window, "DispatchExpeditionButton"));
+                Assert.Equal(3, window.Scavenging.Tabs.SelectedIndex); Capture("active-team");
+                Assert.Contains(window.Session.Report.Workers, w => before[w.Id] != w.Position);
+                Until(() => window.Session.World.Module<ScavengingModule>().Expeditions.All(e => !e.Active));
+                Click(window, Find<Button>(window, "OpenPlannerButton"));
+                Click(window, Find<Button>(window, "PlanSorbentButton"));
+                Click(window, Find<Button>(window, "DispatchExpeditionButton"));
+                Until(() => window.Session.World.Module<ScavengingModule>().Expeditions.All(e => !e.Active));
+                window.Navigate("clinic");
+                Click(window, Find<Button>(window, "RefineMedicineButton"));
+                Until(() => Stock("medicine.refined", "clinic") >= .08m);
+                Click(window, Find<Button>(window, "FormulateMedicineButton"));
+                Until(() => Stock("medicine.fever-dose", "clinic") >= .1m);
+                Click(window, Find<Button>(window, "TreatPatientButton"));
+                Until(() => !window.Session.World.Module<ScavengingModule>().HealthOf(1)!.Sick);
+                Capture("clinic");
+                window.Navigate("scavenging");
+                Click(window, Find<Button>(window, "PlanFuelButton"));
+                Click(window, Find<Button>(window, "DispatchExpeditionButton"));
+                Click(window, Find<Button>(window, "SaveButton")); long savedTick = window.Session.World.Clock.Tick;
+                Click(window, Find<Button>(window, "StepButton")); Click(window, Find<Button>(window, "LoadButton"));
+                Assert.Equal(savedTick, window.Session.World.Clock.Tick);
+                Until(() => window.Session.World.Module<ScavengingModule>().Expeditions.All(e => !e.Active));
+                window.Navigate("industry/4"); Click(window, Find<Button>(window, "RefuelButton"));
+                Assert.Contains(window.Session.World.Module<LogisticsModule>().Jobs, j => j.Active && j.Request.Id.StartsWith("refuel-"));
+                Until(() => window.Session.World.Module<LogisticsModule>().Jobs.All(j => !j.Active));
+                window.Navigate("compound"); window.ToolSelector.SelectedIndex = 4;
+                ClickCell(window, new CellPosition(8,8));
+                Until(() => window.Session.World.Module<ConstructionModule>().Jobs.All(j => !j.Active));
+                Assert.Contains(window.Session.Report.Buildings, b => b.Footprint.Contains(new CellPosition(8,8)));
+                // The starting clinic wears during its real medical batches; repair uses depot materials.
+                ClickCell(window, new CellPosition(18,12));
+                var repair = window.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Repair"));
+                Click(window, repair);
+                Until(() => window.Session.World.Module<ConstructionModule>().Jobs.All(j => !j.Active));
+                Assert.Equal(1m, window.Session.World.Module<CompoundModule>().FindBuilding("clinic-station")!.Condition);
+                Capture("compound");
+                window.Navigate("industry/0"); Click(window, Find<Button>(window, "RecoveryOrdersButton"));
+                Assert.Equal(4, window.Session.World.Module<OrdersModule>().Orders.Count);
+                Until(() => Stock("part.polymer", "workshop") > 0);
+                window.Navigate("scavenging"); Click(window, Find<Button>(window, "PlanFuelButton"));
+                Click(window, Find<Button>(window, "DispatchExpeditionButton"));
+                Until(() => window.Session.World.Module<ScavengingModule>().Expeditions.All(e => !e.Active));
+                window.Navigate("industry/4"); Click(window, Find<Button>(window, "RefuelButton"));
+                Until(() => window.Session.World.Module<LogisticsModule>().Jobs.All(j => !j.Active));
+                long lastDay = window.Session.World.Clock.Tick + 3 * window.Session.World.Clock.Time.TicksPerDay;
+                Until(() => window.Session.World.Clock.Tick >= lastDay && window.Session.World.Module<UtilitiesModule>().ServiceFor("clinic-station")!.Operational, daySteps: true);
+                Assert.True(window.Session.World.Clock.Tick >= lastDay);
+                Assert.DoesNotContain(window.Session.World.Module<ScavengingModule>().Health, h => h.Sick);
+                Assert.True(window.Session.World.Module<UtilitiesModule>().ServiceFor("clinic-station")!.Operational, $"Tick {window.Session.World.Clock.Tick}: " + window.Session.World.Module<UtilitiesModule>().ServiceFor("clinic-station")!.BlockedReason);
+                Assert.True(window.Session.World.Module<EnergyModule>().LastFrame!.ServedKw > 0);
+                Assert.InRange(Math.Abs(mass - window.Session.Report.TotalTrackedKg), 0, .000000001m);
+                PhysicalSave.ValidateWorld(window.Session.World);
+                window.Navigate("home"); Capture("developed-home");
+                Click(window, Find<Button>(window, "SaveButton")); Click(window, Find<Button>(window, "LoadButton"));
+                Assert.InRange(Math.Abs(mass - window.Session.Report.TotalTrackedKg), 0, .000000001m);
+
+                decimal Stock(string material, string store) => window.Session.World.Module<InventoryModule>().Batches.Where(b => b.MaterialId == material && b.StockpileId == store).Sum(b => b.QuantityKg);
+                void Until(Func<bool> done, bool daySteps = false)
+                {
+                    for (int i = 0; i < (daySteps ? 30 : 400) && !done(); i++)
+                    {
+                        if (window.Session.PendingDecision is not null)
+                        {
+                            window.Navigate("fieldteams");
+                            long waiting = window.Session.World.Clock.Tick;
+                            Click(window, Find<Button>(window, "DayButton")); Assert.Equal(waiting, window.Session.World.Clock.Tick);
+                            Click(window, Find<Button>(window, "WaitExpeditionButton"));
+                        }
+                        var inventory = window.Session.World.Module<InventoryModule>();
+                        bool fuelLow = Stock("fuel.diesel", "generator-tank") < 3;
+                        bool depotReady = inventory.Batches.Any(b => b.MaterialId == "fuel.diesel" && b.StockpileId == "salvage" && inventory.AvailableKg(b.Id) >= .001m);
+
+                        if (fuelLow && depotReady
+                            && window.Session.World.Module<Haldane.CareerSim.Work.WorkforceModule>().ReservationFor(2) is null)
+                        {
+                            int workspace = window.WorkspaceTabs.SelectedIndex, industry = window.Industry.Tabs.SelectedIndex, field = window.Scavenging.Tabs.SelectedIndex;
+                            window.Navigate("industry/4"); Click(window, Find<Button>(window, "RefuelButton"));
+                            window.WorkspaceTabs.SelectedIndex = workspace; window.Industry.Tabs.SelectedIndex = industry; window.Scavenging.Tabs.SelectedIndex = field;
+                        }
+                        else if (fuelLow && !depotReady && !window.Session.World.Module<ScavengingModule>().Expeditions.Any(e => e.Active && e.Plan.Manifest.Any(m => window.Session.World.Module<ScavengingModule>().Location(e.Plan.LocationId)!.Definition.Salvage.Any(s => s.Id == m.SalvageId && s.MaterialId == "fuel.diesel"))))
+                        {
+                            int workspace = window.WorkspaceTabs.SelectedIndex, industry = window.Industry.Tabs.SelectedIndex, field = window.Scavenging.Tabs.SelectedIndex;
+                            window.Navigate("scavenging"); Click(window, Find<Button>(window, "PlanFuelButton"));
+                            if (Find<Button>(window, "DispatchExpeditionButton").IsEnabled) Click(window, Find<Button>(window, "DispatchExpeditionButton"));
+                            window.WorkspaceTabs.SelectedIndex = workspace; window.Industry.Tabs.SelectedIndex = industry; window.Scavenging.Tabs.SelectedIndex = field;
+                        }
+                        Click(window, Find<Button>(window, daySteps ? "DayButton" : "AdvanceButton"));
+                    }
+                    Assert.True(done(), window.Session.Status + "\n" + string.Join("\n", window.Session.World.Module<ProductionModule>().Jobs.Select(j => $"{j.Plan.RecipeId}: {j.Status} {j.BlockedReason}")));
+                }
+                void Capture(string name)
+                {
+                    if (Environment.GetEnvironmentVariable("SCAVENGER_UI_ARTIFACT_DIR") is not { Length: > 0 } path) return;
+                    Directory.CreateDirectory(path); Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
+                    using var frame = window.CaptureRenderedFrame(); Assert.NotNull(frame);
+                    frame.Save(Path.Combine(path, "playable-" + name + ".png"), PngBitmapEncoderOptions.Default);
+                }
+            }
+            finally { window.Close(); File.Delete(window.SavePath); }
+        }, CancellationToken.None);
+    }
     private static void SelectChoice(MainWindow window, string name, string id)
     {
         Dispatcher.UIThread.RunJobs(); var selector = Find<ComboBox>(window, name);
@@ -392,7 +606,10 @@ public class CompoundWindowTests
         Assert.True(done(), window.Session.Status + "\n" + string.Join("\n", window.Session.World.Module<ComputingModule>().Jobs.Select(j => $"{j.Plan.Kind}: {j.Status} {j.BlockedReason}")));
     }
     private static T Find<T>(MainWindow window, string name) where T : Control
-        => window.GetVisualDescendants().OfType<T>().Single(c => c.Name == name);
+    {
+        Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
+        return window.GetVisualDescendants().OfType<T>().Single(c => c.Name == name);
+    }
     private static void Click(MainWindow window, Control control)
     {
         control.BringIntoView(); Dispatcher.UIThread.RunJobs(); window.UpdateLayout();

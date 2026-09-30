@@ -18,6 +18,9 @@ public sealed class MainWindow : Window
     private readonly WrapPanel _inspectionActions = new() { Orientation = Orientation.Horizontal };
     private readonly Dictionary<string, StackPanel> _tables = new();
     private readonly DispatcherTimer _timer;
+    private Haldane.Kernel.World? _displayedWorld;
+    private readonly StackPanel _staffActions = new() { Spacing = 6 };
+    private readonly StackPanel _duties = new();
     private readonly Button _run;
     private CellPosition? _roomCorner;
     private int _roomId;
@@ -72,10 +75,10 @@ public sealed class MainWindow : Window
         right.Children.Add(_runState); right.Children.Add(_clock); Add(top, right, 0, 1); main.Children.Add(top);
         var toolbar = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Background = ConsoleUi.Brush("#1A2024") };
         var timeControls = new WrapPanel { Margin = new Thickness(10, 8, 0, 4) };
-        timeControls.Children.Add(Action("Step", () => Session.Advance(), "StepButton"));
-        timeControls.Children.Add(Action("+12 ticks", () => Session.Advance(12), "AdvanceButton"));
-        timeControls.Children.Add(Action("+1 day", () => Session.Advance(Session.World.Clock.Time.TicksPerDay), "DayButton"));
-        timeControls.Children.Add(Action("Until decision", () => Session.Advance(1000, true), "DecisionButton"));
+        timeControls.Children.Add(Action("Step", () => { Pause(); Session.Advance(); }, "StepButton"));
+        timeControls.Children.Add(Action("+12 ticks", () => { Pause(); Session.Advance(12, true); }, "AdvanceButton"));
+        timeControls.Children.Add(Action("+1 day", () => { Pause(); Session.Advance(Session.World.Clock.Time.TicksPerDay, true); }, "DayButton"));
+        timeControls.Children.Add(Action("Until decision", () => { Pause(); Session.Advance(1000, true); }, "DecisionButton"));
         _run = Action("Run", ToggleRun, "RunButton"); _run.Classes.Add("primary"); timeControls.Children.Add(_run); toolbar.Children.Add(timeControls);
         var persistence = ConsoleUi.Bar(Action("Save", SaveSlot, "SaveButton"), Action("Load", LoadSlot, "LoadButton"));
         persistence.Margin = new Thickness(12, 8, 0, 0); Add(toolbar, persistence, 0, 1);
@@ -96,10 +99,12 @@ public sealed class MainWindow : Window
         _inspector.TextWrapping = TextWrapping.Wrap; _inspector.FontSize = 12; _inspector.LineHeight = 20;
         var inspection = new StackPanel { Spacing = 12 }; inspection.Children.Add(_inspector); inspection.Children.Add(_inspectionActions);
         details.Children.Add(ConsoleUi.Section("Cell inspector", inspection));
+        details.Children.Add(ConsoleUi.Section("Operators & duties", _duties));
+        details.Children.Add(ConsoleUi.Section("Project assignments", _staffActions, "Cancel batches, hauls and expeditions in their own workspaces; release experimental project assignments here."));
         details.Children.Add(ConsoleUi.Section("Plan notation", ConsoleUi.Text("Gold / power\nBlue / water\nViolet / data\n\nDotted paths / intended movement\nDashed outlines / construction\nNumbered markers / operators", 11, ConsoleUi.Muted)));
         Add(mapRow, new ScrollViewer { Content = details }, 0, 1); Add(compound, mapRow, 2);
-        Add(compound, ConsoleUi.Bar(Action("Demo orders", Session.BeginDemo, "DemoButton"), Action("Deliver HDPE", () => Session.DispatchSupplies(), "HaulButton"),
-            Action("Inspect pump", () => Session.StartInspection(), "InspectButton"), Action("Prepare clinic", () => Session.StartClinic(), "ClinicButton"),
+        Add(compound, ConsoleUi.Bar(Action("Recovery stock orders", Session.BeginDemo, "DemoButton"), Action("Store transfers →", () => Navigate("industry/5"), "HaulButton"),
+            Action("Personnel & duties →", () => Navigate("register/2"), "InspectButton"), Action("Open clinic →", () => Navigate("clinic"), "ClinicButton"),
             Action("Reset scenario", () => { Pause(); Session.Reset(); }, "ResetButton")), 3);
         var registers = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*"), RowSpacing = 12 };
         registers.Children.Add(ConsoleUi.PageHeading("Compound registers", "Inventory, workforce and service records / live operational data."));
@@ -115,7 +120,11 @@ public sealed class MainWindow : Window
         WorkspaceTabs.SelectedIndex = regional ? 0 : 2;
         WorkspaceTabs.SelectionChanged += (_, _) => UpdateNavigation();
         Region.PlanExpedition += id => { Navigate("scavenging"); Scavenging.SelectLocation(id); };
-        Home.Navigate += Navigate;
+        Home.Navigate += route =>
+        {
+            if (route.StartsWith("plan/", StringComparison.Ordinal)) { Navigate("scavenging"); Scavenging.Suggest(route[5..]); }
+            else Navigate(route);
+        };
         Scavenging.Navigate += Navigate; Industry.Navigate += Navigate;
         Add(main, WorkspaceTabs, 2); Add(shell, main, 0, 1);
         var footer = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 16, Margin = new Thickness(18, 8) };
@@ -141,7 +150,8 @@ public sealed class MainWindow : Window
         { WorkspaceTabs.SelectedIndex = 4; Industry.Tabs.SelectedIndex = page; }
         else if (route.StartsWith("register/", StringComparison.Ordinal) && int.TryParse(route[9..], out int register) && register is >= 0 and <= 5)
         { WorkspaceTabs.SelectedIndex = 5; OperationsTabs.SelectedIndex = register; }
-        else WorkspaceTabs.SelectedIndex = route switch { "region" => 1, "compound" => 2, "scavenging" or "clinic" => 3, "industry" => 4, "registers" => 5, _ => 0 };
+        else WorkspaceTabs.SelectedIndex = route switch { "region" => 1, "compound" => 2, "scavenging" or "clinic" or "fieldteams" => 3, "industry" => 4, "registers" => 5, _ => 0 };
+        if (route == "fieldteams") Scavenging.Tabs.SelectedIndex = 3;
         if (route is "clinic" or "scavenging") Scavenging.Tabs.SelectedIndex = route == "clinic" ? 1 : 0;
         UpdateNavigation();
     }
@@ -160,7 +170,7 @@ public sealed class MainWindow : Window
         var button = new Button { Content = title, Name = name, Margin = new Thickness(0, 0, 6, 4), Padding = new Thickness(10, 7) };
         button.Click += (_, _) => action(); return button;
     }
-    private void ToggleRun() { if (_timer.IsEnabled) Pause(); else { _timer.Start(); _run.Content = "Pause"; _runState.Text = "RUNNING"; } }
+    private void ToggleRun() { if (_timer.IsEnabled) Pause(); else if (Session.PendingDecision is { } reason) { Session.Notify(reason); Navigate("fieldteams"); } else { _timer.Start(); _run.Content = "Pause"; _runState.Text = "RUNNING"; } }
     private void Pause() { _timer.Stop(); _run.Content = "Run"; _runState.Text = "PAUSED"; }
     private void OnCell(CellPosition cell, bool inspectOnly)
     {
@@ -185,9 +195,12 @@ public sealed class MainWindow : Window
     }
     private void Refresh()
     {
+        if (_displayedWorld != Session.World || Session.PendingDecision is not null) Pause();
+        _displayedWorld = Session.World;
         var report = Session.Report;
         Map.Report = report;
-        _clock.Text = $"DAY {Session.World.Clock.Day + 1:00}   /   TICK {report.Tick:0000}";
+        long interval = report.Tick % Session.World.Clock.Time.TicksPerDay;
+        _clock.Text = $"DAY {Session.World.Clock.Day + 1:00}   {interval * 24 / Session.World.Clock.Time.TicksPerDay:00}:{interval * 1440 / Session.World.Clock.Time.TicksPerDay % 60:00}   /   TICK {report.Tick:0000}";
         _mass.Text = $"MASS LEDGER  /  {report.TotalTrackedKg:0.##} kg tracked";
         _status.Text = Session.Status;
         Table("Materials", ["Material / batch", "Store", "kg", "Free kg", "Purity / known contamination"], "3*,2*,*,*,3*",
@@ -204,6 +217,15 @@ public sealed class MainWindow : Window
             report.Buildings.Select(b => { var u = report.Utilities.FirstOrDefault(u => u.BuildingId == b.Id); return new[] { b.Name, $"{b.Condition:P0}", $"{u?.PowerAllocatedKw ?? 0} / {u?.PowerRequiredKw ?? 0}", $"{u?.WaterAllocatedLph ?? 0} / {u?.WaterRequiredLph ?? 0}", b.Operational ? "Operational" : b.BlockedReason ?? "Unavailable" }; })
                 .Concat(report.Rooms.Select(r => new[] { r.Name, "—", "—", "—", r.Status })));
         Table("Events", ["Activity / newest first"], "*", report.RecentEvents.Reverse().Select(entry => new[] { entry }));
+        var workers = Session.World.Module<Haldane.CareerSim.Work.WorkforceModule>();
+        var board = Session.World.Module<Haldane.CareerSim.Work.ProjectBoardModule>();
+        ConsoleUi.Table(_duties, ["Operator", "Activity"], "*,2*", report.Workers.Select(w => new[] { w.Name, w.WorkReason ?? w.Assignment ?? "Idle / awaiting orders" }));
+        _staffActions.Children.Clear();
+        foreach (var worker in workers.Staff.Where(w => board.IsAssigned(w.Id)))
+        {
+            int id = worker.Id;
+            _staffActions.Children.Add(Action($"Release {worker.Name} from project", () => Session.ReleaseProject(id), $"ReleaseWorker{id}Button"));
+        }
         Home.Refresh();
         Industry.Refresh();
         Scavenging.Refresh();

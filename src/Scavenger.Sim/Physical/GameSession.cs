@@ -23,7 +23,7 @@ public sealed class GameSession
     {
         _regional = regional; _generated = regional && generated; _seed = seed;
         var (_, scheduler, _) = _generated ? GeneratedScenario.Create(seed) : regional ? ScavengingScenario.Create(seed) : IndustrialScenario.Create(seed); Scheduler = scheduler;
-        Status = regional ? "Mira is ill. Recover pharmacy stock and hardware sorbent, then prepare clinic treatment. Plan your next expedition under Scavenging."
+        Status = regional ? "Mira is ill. Follow the opening priorities on Overview. Supply plans let you review and dispatch a qualified team; time starts paused."
             : "Plan recovery orders, examine the electronics cache, or build your compound.";
     }
     public SettlementMotif? RegionMotifPreference => _motif;
@@ -59,12 +59,39 @@ public sealed class GameSession
     }
     public FastForwardResult Advance(int ticks = 1, bool stopOnDecision = false)
     {
-        var result = Scheduler.FastForward(ticks, stopOnDecision ? new FastForwardStopConditions
-        { InterruptCatalogue = World.Has<ScavengingModule>() ? ScavengingScenario.CreateCatalogue() : World.Has<ProductionModule>() ? IndustrialScenario.CreateCatalogue() : PhysicalCompoundScenario.CreateCatalogue() } : FastForwardStopConditions.RunToEnd);
-        Status = result.StoppedEarly ? $"Stopped at tick {World.Clock.Tick} for a decision." : $"Advanced to tick {World.Clock.Tick}.";
+        if (ticks < 0) throw new ArgumentOutOfRangeException(nameof(ticks));
+        if (stopOnDecision && PendingDecision is { } pending)
+        {
+            Status = pending;
+            Changed?.Invoke();
+            return new FastForwardResult(0, [], true);
+        }
+        var conditions = stopOnDecision ? new FastForwardStopConditions
+        { MinSeverityToStop = Haldane.Kernel.Events.EventSeverity.Warning,
+          StopOnKinds = new HashSet<string>(StringComparer.Ordinal) { ScavengingEvents.Decision, ScavengingEvents.Completed, IndustryEvents.Completed, CompoundEventKinds.ConstructionCompleted } }
+            : FastForwardStopConditions.RunToEnd;
+        var events = new List<Haldane.Kernel.Events.GameEvent>();
+        int advanced = 0; bool stopped = false, fuelWarning = false;
+        while (advanced < ticks)
+        {
+            decimal priorFuel = TankFuel();
+            bool hadPower = !World.Has<EnergyModule>() || World.Module<EnergyModule>().LastFrame is not { } prior || prior.ServedKw >= prior.RequestedKw;
+            var frame = Scheduler.FastForward(1, conditions); advanced++; events.AddRange(frame.Events);
+            bool lostPower = hadPower && World.Has<EnergyModule>() && World.Module<EnergyModule>().LastFrame is { } power && power.ServedKw < power.RequestedKw;
+            fuelWarning = priorFuel >= 3 && TankFuel() < 3;
+            if (stopOnDecision && (frame.StoppedEarly || PendingDecision is not null || lostPower || fuelWarning)) { stopped = true; break; }
+        }
+        var result = new FastForwardResult(advanced, events, stopped);
+        Status = result.StoppedEarly && fuelWarning ? $"Generator tank is low ({TankFuel():0.00} kg). Open Industry / Energy to deliver depot fuel, or plan a fuel expedition." : result.StoppedEarly ? PendingDecision ?? $"Stopped at tick {World.Clock.Tick}: {result.Events.LastOrDefault(e => e.Severity >= Haldane.Kernel.Events.EventSeverity.Warning || e.Kind == ScavengingEvents.Completed || e.Kind == IndustryEvents.Completed || e.Kind == CompoundEventKinds.ConstructionCompleted)?.Description ?? "Review the latest activity or power supply."}" : $"Advanced to tick {World.Clock.Tick}.";
         Changed?.Invoke();
         return result;
     }
+    private decimal TankFuel() => World.Has<EnergyModule>()
+        ? World.Module<InventoryModule>().Batches.Where(b => b.MaterialId == "fuel.diesel" && b.StockpileId == "generator-tank").Sum(b => World.Module<InventoryModule>().AvailableKg(b.Id)) : decimal.MaxValue;
+    public string? PendingDecision => World.TryModule<ScavengingModule>(out var m) && m.Expeditions.FirstOrDefault(e => e.Status == ExpeditionStatus.Decision) is { } e
+        ? $"{e.Plan.Id} is waiting: {e.Reason} Open Expeditions and choose Assess / wait or Recall / retreat before advancing time." : null;
+    public void Notify(string message) { Status = message; Changed?.Invoke(); }
+    public CommandResult ReleaseProject(int workerId) => Submit(new UnassignStaffCommand(workerId));
     public CommandResult Build(string definitionId, CellPosition origin)
         => Submit(new PlanBuildCommand(new BuildRequest(NextId("build"), definitionId, origin, 3, 2, "salvage")));
     public CommandResult Repair(string buildingId)
@@ -72,7 +99,7 @@ public sealed class GameSession
         var building = World.Module<CompoundModule>().FindBuilding(buildingId);
         if (building is null) return new CommandResult(false, "Unknown fixture.");
         return Submit(new PlanBuildCommand(new BuildRequest(NextId("repair"), building.DefinitionId, building.Origin,
-            3, 2, World.Has<ProductionModule>() ? "workshop" : "salvage", building.Id)));
+            3, 2, "salvage", building.Id)));
     }
     public CommandResult DispatchSupplies()
         => Submit(new QueuePhysicalHaulCommand(new HaulRequest(NextId("supply"), "salvage-hdpe", "depot-workshop", 2, 6)));
@@ -97,8 +124,13 @@ public sealed class GameSession
     }
     public void BeginDemo()
     {
-        if (World.Clock.Tick != 0) { Status = "Demo orders are available in a fresh compound."; Changed?.Invoke(); return; }
-        if (World.Has<ProductionModule>()) IndustrialScenario.QueueRecoveryOrders(Scheduler);
+        if (World.Has<ProductionModule>())
+        {
+            if (new[] { "wash-hdpe", "dry-hdpe", "shred-hdpe", "mould-clips" }.All(r =>
+                World.Module<OrdersModule>().Orders.Any(o => o.Plan.Template.RecipeId == r)))
+            { Notify("Recovery stock orders already exist. Review targets and pause/resume them in Industry."); return; }
+            IndustrialScenario.QueueRecoveryOrders(Scheduler);
+        }
         else PhysicalCompoundScenario.QueueDemoCommands(Scheduler);
         Scheduler.Advance();
         Status = "Recovery orders are planned; washed, dried, shredded and moulded stock will be maintained.";
