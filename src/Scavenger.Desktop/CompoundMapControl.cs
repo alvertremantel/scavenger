@@ -48,16 +48,16 @@ public sealed class CompoundMapControl : Control
     public override void Render(DrawingContext context)
     {
         base.Render(context);
-        context.FillRectangle(Brush("#111C24"), new Rect(Bounds.Size));
+        context.FillRectangle(Brush("#161D21"), new Rect(Bounds.Size));
         if (Report is not { } report) return;
         foreach (var row in report.Tiles)
         {
             string color = row.Tile.Terrain switch
             {
-                Terrain.Floor => "#293640", Terrain.Wall => "#62717A", Terrain.OpenDoor => "#81A68A",
-                Terrain.ClosedDoor => "#B07C58", Terrain.Water => "#275572", Terrain.Rock => "#4D5359", _ => "#1C2B30"
+                Terrain.Floor => "#2A3337", Terrain.Wall => "#62717A", Terrain.OpenDoor => "#81A68A",
+                Terrain.ClosedDoor => "#B07C58", Terrain.Water => "#275572", Terrain.Rock => "#4D5359", _ => "#202A29"
             };
-            context.DrawRectangle(Brush(color), new Pen(Brush("#26373B"), .5), CellRect(row.Cell));
+            context.DrawRectangle(Brush(color), new Pen(Brush("#30393E"), .5), CellRect(row.Cell));
             if (row.Tile.Terrain is Terrain.OpenDoor or Terrain.ClosedDoor)
                 Text(context, row.Tile.Terrain == Terrain.OpenDoor ? "·" : "×", CellRect(row.Cell).TopLeft + new Vector(Scale / 3, 1), Brushes.White, Scale * .6);
         }
@@ -85,7 +85,7 @@ public sealed class CompoundMapControl : Control
         {
             var area = AreaRect(building.Footprint).Deflate(3);
             string color = building.Kind switch { BuildingKind.Stockpile => "#66573A", BuildingKind.Generator => "#5D5937", BuildingKind.Pump => "#2D6276", BuildingKind.Clinic => "#536D56", BuildingKind.Computer => "#65547E", BuildingKind.Battery => "#4A6B61", _ => "#3F536B" };
-            context.DrawRectangle(Brush(color), new Pen(building.Operational ? Brush("#8FADB5") : Brush("#E1925F"), 1.5), area, 3, 3);
+            context.DrawRectangle(Brush(color), new Pen(building.Operational ? Brush("#8FADB5") : Brush("#E1925F"), 1.5), area, 0, 0);
             string label = building.Kind switch { BuildingKind.Stockpile => "S", BuildingKind.Generator => "GEN", BuildingKind.Pump => "PUMP", BuildingKind.Clinic => "MED", BuildingKind.Computer => "PC", BuildingKind.Battery => "BAT", _ => building.Id switch { "washer" => "WASH", "dryer" => "DRY", "shredder" => "SHRD", "moulder" => "MOULD", "electronics-bench" => "TECH", _ => "BENCH" } };
             Text(context, label, area.TopLeft + new Vector(3, 3), Brushes.White, Math.Clamp(Scale * .32, 8, 12));
             context.DrawEllipse(null, new Pen(Brush("#BDD3D6"), 1), CellCenter(building.InteractionCell), 3, 3);
@@ -102,9 +102,9 @@ public sealed class CompoundMapControl : Control
         foreach (var worker in report.Workers.Where(w => !w.Away))
         {
             var center = CellCenter(worker.Position);
-            context.DrawEllipse(WorkerColor(worker.Id), new Pen(Brush("#111C24"), 1.5), center, Scale * .27, Scale * .27);
-            Text(context, worker.Id.ToString(CultureInfo.InvariantCulture), center - new Vector(3, 6), Brush("#111C24"), 10);
-            if (worker.Carrying) context.DrawRectangle(Brush("#F6DDA2"), new Pen(Brush("#111C24"), 1), new Rect(center.X + 4, center.Y + 2, 7, 7));
+            context.DrawEllipse(WorkerColor(worker.Id), new Pen(Brush("#161D21"), 1.5), center, Scale * .27, Scale * .27);
+            Text(context, worker.Id.ToString(CultureInfo.InvariantCulture), center - new Vector(3, 6), Brush("#161D21"), 10);
+            if (worker.Carrying) context.DrawRectangle(Brush("#F6DDA2"), new Pen(Brush("#161D21"), 1), new Rect(center.X + 4, center.Y + 2, 7, 7));
         }
         if (SelectedCell is { } selected) context.DrawRectangle(null, new Pen(Brush("#EDF7F9"), 2), CellRect(selected).Deflate(1));
         for (int x = 0; x < report.Width; x += 5) Text(context, x.ToString(CultureInfo.InvariantCulture), new Point(Offset.X + x * Scale + 2, Offset.Y - 16), Brush("#829CA5"), 10);

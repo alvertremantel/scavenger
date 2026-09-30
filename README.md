@@ -17,7 +17,7 @@ The prototype combines operational tables with a physical 2D compound in Avaloni
 - `docs/`: provisional design and implementation notes.
 - `src/Scavenger.Sim/`: physical world, construction, utilities, scenario, commands, and reports.
 - `src/Scavenger.Cli/`: scripted simulation, save/load demonstration, and JSON reports.
-- `src/Scavenger.Desktop/`: Avalonia map, inspector, operational tables, and save/load controls.
+- `src/Scavenger.Desktop/`: Avalonia operator console, live dashboard, persistent workspaces, maps, searchable registers and commands.
 - `tests/`: simulation integration/replay and real Avalonia input/rendering tests.
 - `haldane/haldane/`: existing independent Haldane engine checkout. It is deliberately
   ignored by this repository; engine changes and tests live in that checkout's own Git repository.
@@ -74,13 +74,32 @@ memory, archive integrity and physical delivery constrain that progression. See 
 `--industry` runs a deterministic command-driven demonstration of this path in the CLI.
 Model training/evaluation are explicitly simulated game workloads; no actual ML code executes.
 
-In the desktop app, choose a map tool and click a site, or
+The desktop opens on a live **Overview** dashboard. Six persistent workspaces —
+Overview, Region, Compound, Expeditions, Industry and Registers — are available from
+the rail and document tabs. Ctrl+1…6 selects a workspace; Ctrl+Tab / Ctrl+Shift+Tab
+cycles views. Dashboard and contextual links connect constraints to the relevant
+screen. Registers supports case-insensitive filtering across every record column.
+Clinic care has its own expedition subview; recipe specifications have their own
+industry library. **Region → World setup** replaces the current world with a new
+seeded scenario. See [the console design and validation notes](docs/OPERATOR-CONSOLE-UI.md).
+
+In **Compound**, choose a map tool and click a site, or
 inspect an existing fixture. Room zones use two interior corners. Right-click
 inspects without placing. The inspector supports door operation, repair, cancellation,
 and power/water/data conduit isolation; **Damage** is a prototype testing control. Accepted actions advance
 one tick. **Step**, **+12 ticks**, **+1 day**, **Until decision**, and **Run** control time explicitly.
 Save/load uses `saves/compound.json`. The screenshot mode uses actual Avalonia controls
-and Skia rendering without requiring a display server.
+and Skia rendering without requiring a display server. For example:
+
+```sh
+dotnet run --project src/Scavenger.Desktop -- --screenshot artifacts/ui-home.png --view home --ticks 0
+dotnet run --project src/Scavenger.Desktop -- --screenshot artifacts/ui-region.png --view region --seed 42 --width 1050 --height 780
+```
+
+Screenshot views include home, compound, region, region-setup, scavenging, clinic,
+yields, production, recipes, hardware, archives, compute, energy, transfers and
+all six register views. `--ticks` defaults to zero so captures do not silently
+start demonstration orders.
 
 Current scope includes regional expeditions with decay/rivals/exposure, finite object
 yields, recovered parts/media, fictional medicine and clinic care, skills, quality-bearing batches, atomic mass-balanced conversions,

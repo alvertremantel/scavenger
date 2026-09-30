@@ -14,13 +14,15 @@ public sealed record MapTool(string Label, string? DefinitionId = null)
 
 public sealed class MainWindow : Window
 {
-    private readonly TextBlock _clock = Label("", 17), _mass = Label(""), _status = Label(""), _inspector = Label("");
+    private readonly TextBlock _clock = Label("", 12), _mass = Label(""), _status = Label(""), _inspector = Label("");
     private readonly WrapPanel _inspectionActions = new() { Orientation = Orientation.Horizontal };
     private readonly Dictionary<string, StackPanel> _tables = new();
     private readonly DispatcherTimer _timer;
     private readonly Button _run;
     private CellPosition? _roomCorner;
     private int _roomId;
+    private readonly TextBox _recordFilter = new() { Name = "RegisterFilter", PlaceholderText = "Filter records by material, worker, state or location…", MinWidth = 300 };
+    private readonly Dictionary<string, (string[] Headers, string Widths, string[][] Rows)> _records = [];
     public GameSession Session { get; }
     public ScavengingPanel Scavenging { get; }
     public RegionPanel Region { get; }
@@ -30,98 +32,126 @@ public sealed class MainWindow : Window
     public TabControl OperationsTabs { get; } = new() { Name = "OperationsTabs" };
     public ComboBox ToolSelector { get; } = new() { Name = "MapTool", MinWidth = 165 };
     public string SavePath { get; set; } = Path.Combine(Environment.CurrentDirectory, "saves", "compound.json");
+    public HomePanel Home { get; }
+    private readonly Dictionary<int, Button> _navigation = [];
+    private readonly TextBlock _breadcrumb = ConsoleUi.Eyebrow("Overview / home");
+    private readonly TextBlock _runState = ConsoleUi.Text("PAUSED", 10, ConsoleUi.Accent);
     public MainWindow(bool regional = true, bool generated = true)
     {
         Session = new GameSession(regional, generated);
-        Region = new RegionPanel(Session);
-        Scavenging = new ScavengingPanel(Session);
-        Title = "Scavenger · Compound operations";
-        Industry = new IndustryPanel(Session);
+        Region = new RegionPanel(Session); Scavenging = new ScavengingPanel(Session);
+        Industry = new IndustryPanel(Session); Home = new HomePanel(Session);
+        Title = "Scavenger / Compound operator console";
         Width = 1440; Height = 1000; MinWidth = 1050; MinHeight = 780;
-        Background = new SolidColorBrush(Color.Parse("#18232D"));
-        var shell = new Grid { Margin = new Thickness(22), RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*,Auto"), RowSpacing = 12 };
-        var heading = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-        var title = new StackPanel { Spacing = 4 };
-        title.Children.Add(Label("COMPOUND OPERATIONS", 24));
-        title.Children.Add(Label("Prototype / seeded region, expeditions, medicine & compound construction", 12, "#9DB2BD"));
-        heading.Children.Add(title);
-        var figures = new StackPanel { HorizontalAlignment = HorizontalAlignment.Right, Spacing = 4 };
-        figures.Children.Add(_clock); figures.Children.Add(_mass); Add(heading, figures, 0, 1);
-        Add(shell, heading, 0);
+        var shell = new Grid { ColumnDefinitions = new ColumnDefinitions("168,*"), RowDefinitions = new RowDefinitions("*,Auto") };
+        var rail = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto"), Background = ConsoleUi.Brush("#171C20") };
+        var identity = new StackPanel { Spacing = 5, Margin = new Thickness(20, 25, 12, 24) };
+        identity.Children.Add(ConsoleUi.Text("SCAVENGER", 15, ConsoleUi.Accent));
+        identity.Children.Add(ConsoleUi.Eyebrow("Compound console")); rail.Children.Add(identity);
+        var nav = new StackPanel { Spacing = 3 };
+        string[] titles = ["Overview", "Region", "Compound", "Expeditions", "Industry", "Registers"];
+        nav.Children.Add(new Border { Padding = new Thickness(20, 8), Child = ConsoleUi.Eyebrow("Workspaces") });
+        for (int i = 0; i < titles.Length; i++)
+        {
+            int index = i;
+            var button = ConsoleUi.Button($"{i + 1:00}   {titles[i]}", () => WorkspaceTabs.SelectedIndex = index, $"Nav{titles[i]}Button");
+            button.Classes.Add("nav"); ToolTip.SetTip(button, $"{titles[i]} · Ctrl+{i + 1}"); _navigation.Add(i, button); nav.Children.Add(button);
+        }
+        nav.Children.Add(new Border { Padding = new Thickness(20, 20, 12, 8), Child = ConsoleUi.Eyebrow("Direct access") });
+        foreach (var (label, route) in new[] { ("Clinic", "clinic"), ("Power & reserves", "industry/4"), ("Hardware", "industry/1"), ("Store transfers", "industry/5") })
+        { var b = ConsoleUi.Button(label, () => Navigate(route), "Quick" + route.Replace("/", "")); b.Classes.Add("nav"); nav.Children.Add(b); }
+        Add(rail, nav, 1);
+        var railFoot = new StackPanel { Margin = new Thickness(20), Spacing = 6 };
+        railFoot.Children.Add(ConsoleUi.Eyebrow("Local workstation")); railFoot.Children.Add(ConsoleUi.Text("Offline / operator 01", 11, ConsoleUi.Muted));
+        railFoot.Children.Add(ConsoleUi.Text("Ctrl+Tab  switch view", 10, ConsoleUi.Muted)); Add(rail, railFoot, 2);
+        shell.Children.Add(new Border { Child = rail, BorderBrush = ConsoleUi.Brush(ConsoleUi.Line), BorderThickness = new Thickness(0, 0, 1, 0) });
+        var main = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*"), RowSpacing = 14, Margin = new Thickness(24, 20, 24, 16) };
+        var top = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        top.Children.Add(_breadcrumb);
+        var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 16 };
+        right.Children.Add(_runState); right.Children.Add(_clock); Add(top, right, 0, 1); main.Children.Add(top);
+        var toolbar = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Background = ConsoleUi.Brush("#1A2024") };
+        var timeControls = new WrapPanel { Margin = new Thickness(10, 8, 0, 4) };
+        timeControls.Children.Add(Action("Step", () => Session.Advance(), "StepButton"));
+        timeControls.Children.Add(Action("+12 ticks", () => Session.Advance(12), "AdvanceButton"));
+        timeControls.Children.Add(Action("+1 day", () => Session.Advance(Session.World.Clock.Time.TicksPerDay), "DayButton"));
+        timeControls.Children.Add(Action("Until decision", () => Session.Advance(1000, true), "DecisionButton"));
+        _run = Action("Run", ToggleRun, "RunButton"); _run.Classes.Add("primary"); timeControls.Children.Add(_run); toolbar.Children.Add(timeControls);
+        var persistence = ConsoleUi.Bar(Action("Save", SaveSlot, "SaveButton"), Action("Load", LoadSlot, "LoadButton"));
+        persistence.Margin = new Thickness(12, 8, 0, 0); Add(toolbar, persistence, 0, 1);
+        Add(main, new Border { Child = toolbar, BorderThickness = new Thickness(1), BorderBrush = ConsoleUi.Brush(ConsoleUi.Line) }, 1);
 
-        var toolbar = new WrapPanel { Orientation = Orientation.Horizontal };
-        toolbar.Children.Add(Action("Step", () => Session.Advance(), "StepButton"));
-        toolbar.Children.Add(Action("+12 ticks", () => Session.Advance(12), "AdvanceButton"));
-        toolbar.Children.Add(Action("+1 day", () => Session.Advance(Session.World.Clock.Time.TicksPerDay), "DayButton"));
-        toolbar.Children.Add(Action("Until decision", () => Session.Advance(1000, true), "DecisionButton"));
-        _run = Action("Run", ToggleRun, "RunButton"); toolbar.Children.Add(_run);
-        toolbar.Children.Add(Action("Demo orders", Session.BeginDemo, "DemoButton"));
-        toolbar.Children.Add(Action("Deliver HDPE", () => Session.DispatchSupplies(), "HaulButton"));
-        toolbar.Children.Add(Action("Inspect pump", () => Session.StartInspection(), "InspectButton"));
-        toolbar.Children.Add(Action("Prepare clinic", () => Session.StartClinic(), "ClinicButton"));
-        toolbar.Children.Add(Action("Save", SaveSlot, "SaveButton"));
-        toolbar.Children.Add(Action("Load", LoadSlot, "LoadButton"));
-        toolbar.Children.Add(Action("Reset", () => { Pause(); Session.Reset(); }, "ResetButton"));
-        Add(shell, toolbar, 1);
-
-        var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
         ToolSelector.ItemsSource = new MapTool[] { new("Inspect"), new("Floor", "floor"), new("Wall", "wall"), new("Door", "door"),
             new("Storage zone", "stockpile"), new("Workbench", "workbench"), new("Power cable", "power-cable"), new("Water pipe", "water-pipe"), new("Data cable", "data-cable"), new("Room zone") };
-        ToolSelector.SelectedIndex = 0;
-        ToolSelector.SelectionChanged += (_, _) => { _roomCorner = null; UpdateInspector(); };
-        tools.Children.Add(Label("MAP TOOL", 11, "#9DB2BD")); tools.Children.Add(ToolSelector);
-        var power = new CheckBox { Content = "Power", IsChecked = true, Name = "PowerOverlay" };
-        power.IsCheckedChanged += (_, _) => Map.ShowPower = power.IsChecked == true;
-        var water = new CheckBox { Content = "Water", IsChecked = true, Name = "WaterOverlay" };
-        water.IsCheckedChanged += (_, _) => Map.ShowWater = water.IsChecked == true;
-        var data = new CheckBox { Content = "Data", IsChecked = true, Name = "DataOverlay" };
-        data.IsCheckedChanged += (_, _) => Map.ShowData = data.IsChecked == true;
-        tools.Children.Add(power); tools.Children.Add(water); tools.Children.Add(data);
-        tools.Children.Add(Label("Click to place · right-click to inspect · room zones use two corners", 11, "#9DB2BD"));
-        Add(shell, tools, 2);
-
-        var workspace = new Grid { RowDefinitions = new RowDefinitions(regional ? "2*,3*" : "3*,2*"), RowSpacing = 14 };
-        var mapRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,300"), ColumnSpacing = 16 };
-        var mapPanel = new Border { CornerRadius = new CornerRadius(8), ClipToBounds = true, Child = Map };
-        mapRow.Children.Add(mapPanel);
-        var details = new StackPanel { Spacing = 12 };
-        details.Children.Add(Label("CELL INSPECTOR", 13, "#ABC5CE"));
+        ToolSelector.SelectedIndex = 0; ToolSelector.SelectionChanged += (_, _) => { _roomCorner = null; UpdateInspector(); };
+        var power = new CheckBox { Content = "Power", IsChecked = true, Name = "PowerOverlay" }; power.IsCheckedChanged += (_, _) => Map.ShowPower = power.IsChecked == true;
+        var water = new CheckBox { Content = "Water", IsChecked = true, Name = "WaterOverlay" }; water.IsCheckedChanged += (_, _) => Map.ShowWater = water.IsChecked == true;
+        var data = new CheckBox { Content = "Data", IsChecked = true, Name = "DataOverlay" }; data.IsCheckedChanged += (_, _) => Map.ShowData = data.IsChecked == true;
+        var compound = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto"), RowSpacing = 14 };
+        compound.Children.Add(ConsoleUi.PageHeading("Compound plan", "Construction, access and utilities / click to place, right-click to inspect."));
+        Add(compound, ConsoleUi.Frame(ConsoleUi.Bar(ConsoleUi.Field("Map tool", ToolSelector), power, water, data), new Thickness(14, 10, 14, 2)), 1);
+        var mapRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,280"), ColumnSpacing = 14 };
+        mapRow.Children.Add(ConsoleUi.Frame(Map, new Thickness(0)));
+        var details = new StackPanel { Spacing = 16 };
         _inspector.TextWrapping = TextWrapping.Wrap; _inspector.FontSize = 12; _inspector.LineHeight = 20;
-        details.Children.Add(_inspector);
-        details.Children.Add(_inspectionActions);
-        details.Children.Add(Label("PEOPLE & LAYERS", 11, "#ABC5CE"));
-        details.Children.Add(Label("1 Mira / mechanics, electronics, computing\n2 Ivo / hauling\n3 Noor / construction\n4 Anya / medicine, chemistry\n\nGold: power · blue: water · violet: data\nDotted lines: intended walking paths\nDashed footprints: construction sites\nSmall box: carried cargo", 12, "#A8BCC6"));
-        Add(mapRow, new ScrollViewer { Content = details }, 0, 1);
-        workspace.Children.Add(mapRow);
-        var tabs = OperationsTabs;
-        tabs.Items.Add(new TabItem { Header = "Scavenging", Name = "ScavengingTab", Content = Scavenging });
-        tabs.Items.Add(new TabItem { Header = "Industry", Name = "IndustryTab", Content = Industry });
+        var inspection = new StackPanel { Spacing = 12 }; inspection.Children.Add(_inspector); inspection.Children.Add(_inspectionActions);
+        details.Children.Add(ConsoleUi.Section("Cell inspector", inspection));
+        details.Children.Add(ConsoleUi.Section("Plan notation", ConsoleUi.Text("Gold / power\nBlue / water\nViolet / data\n\nDotted paths / intended movement\nDashed outlines / construction\nNumbered markers / operators", 11, ConsoleUi.Muted)));
+        Add(mapRow, new ScrollViewer { Content = details }, 0, 1); Add(compound, mapRow, 2);
+        Add(compound, ConsoleUi.Bar(Action("Demo orders", Session.BeginDemo, "DemoButton"), Action("Deliver HDPE", () => Session.DispatchSupplies(), "HaulButton"),
+            Action("Inspect pump", () => Session.StartInspection(), "InspectButton"), Action("Prepare clinic", () => Session.StartClinic(), "ClinicButton"),
+            Action("Reset scenario", () => { Pause(); Session.Reset(); }, "ResetButton")), 3);
+        var registers = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*"), RowSpacing = 12 };
+        registers.Children.Add(ConsoleUi.PageHeading("Compound registers", "Inventory, workforce and service records / live operational data."));
         foreach (string name in new[] { "Materials", "Stores", "Workers", "Jobs", "Services", "Events" })
         {
-            var rows = new StackPanel { Spacing = 2 };
-            _tables.Add(name, rows);
-            tabs.Items.Add(new TabItem { Header = name, Content = new ScrollViewer { Content = rows, Margin = new Thickness(0, 8, 0, 0) } });
+            var rows = new StackPanel(); _tables.Add(name, rows);
+            OperationsTabs.Items.Add(new TabItem { Header = name, Name = "Register" + name, Content = new ScrollViewer { Content = ConsoleUi.Section(name + " register", rows), Margin = new Thickness(0, 14, 0, 0) } });
         }
-        tabs.SelectedIndex = regional ? 0 : 1;
-        Add(workspace, tabs, 1);
-        WorkspaceTabs.Items.Add(new TabItem { Header = "Compound", Content = workspace });
-        WorkspaceTabs.Items.Add(new TabItem { Header = "Region", Content = Region });
-        WorkspaceTabs.SelectedIndex = regional && generated ? 1 : 0;
-        tools.IsVisible = WorkspaceTabs.SelectedIndex == 0;
-        WorkspaceTabs.SelectionChanged += (_, _) => tools.IsVisible = WorkspaceTabs.SelectedIndex == 0;
-        Region.PlanExpedition += id => { WorkspaceTabs.SelectedIndex = 0; OperationsTabs.SelectedIndex = 0; Scavenging.SelectLocation(id); };
-        Add(shell, WorkspaceTabs, 3);
-        _status.TextWrapping = TextWrapping.Wrap; _status.Foreground = new SolidColorBrush(Color.Parse("#C4D7DC"));
-        Add(shell, _status, 4);
-        Content = shell;
+        _recordFilter.TextChanged += (_, _) => FilterRecords();
+        Add(registers, _recordFilter, 1); Add(registers, OperationsTabs, 2);
+        var pages = new Control[] { Home, Region, compound, Scavenging, Industry, registers };
+        for (int i = 0; i < pages.Length; i++) WorkspaceTabs.Items.Add(new TabItem { Header = titles[i], Name = "Workspace" + titles[i], Content = pages[i] });
+        WorkspaceTabs.SelectedIndex = regional ? 0 : 2;
+        WorkspaceTabs.SelectionChanged += (_, _) => UpdateNavigation();
+        Region.PlanExpedition += id => { Navigate("scavenging"); Scavenging.SelectLocation(id); };
+        Home.Navigate += Navigate;
+        Scavenging.Navigate += Navigate; Industry.Navigate += Navigate;
+        Add(main, WorkspaceTabs, 2); Add(shell, main, 0, 1);
+        var footer = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 16, Margin = new Thickness(18, 8) };
+        _status.TextWrapping = TextWrapping.Wrap; _status.FontSize = 11; footer.Children.Add(_status);
+        _mass.FontSize = 10; _mass.Foreground = ConsoleUi.Brush(ConsoleUi.Muted); Add(footer, _mass, 0, 1);
+        var footFrame = new Border { Child = footer, BorderBrush = ConsoleUi.Brush(ConsoleUi.Line), BorderThickness = new Thickness(0, 1, 0, 0) };
+        Grid.SetColumnSpan(footFrame, 2); Add(shell, footFrame, 1); Content = shell;
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
         _timer.Tick += (_, _) => { if (Session.Advance(1, true).StoppedEarly) Pause(); };
-        Session.Changed += Refresh;
-        Map.CellClicked += OnCell;
+        AddHandler(KeyDownEvent, (_, e) =>
+        {
+            if (!e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Control)) return;
+            if (e.Key is >= Avalonia.Input.Key.D1 and <= Avalonia.Input.Key.D6) { WorkspaceTabs.SelectedIndex = (int)e.Key - (int)Avalonia.Input.Key.D1; e.Handled = true; }
+            if (e.Key == Avalonia.Input.Key.Tab) { WorkspaceTabs.SelectedIndex = (WorkspaceTabs.SelectedIndex + (e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Shift) ? 5 : 1)) % 6; e.Handled = true; }
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        Session.Changed += Refresh; Map.CellClicked += OnCell;
         Closed += (_, _) => { Pause(); Session.Changed -= Refresh; };
-        Refresh();
+        Refresh(); UpdateNavigation();
     }
-    private static TextBlock Label(string text, double size = 13, string color = "#E4EDF0") => new()
+    public void Navigate(string route)
+    {
+        if (route.StartsWith("industry/", StringComparison.Ordinal) && int.TryParse(route[9..], out int page) && page is >= 0 and <= 6)
+        { WorkspaceTabs.SelectedIndex = 4; Industry.Tabs.SelectedIndex = page; }
+        else if (route.StartsWith("register/", StringComparison.Ordinal) && int.TryParse(route[9..], out int register) && register is >= 0 and <= 5)
+        { WorkspaceTabs.SelectedIndex = 5; OperationsTabs.SelectedIndex = register; }
+        else WorkspaceTabs.SelectedIndex = route switch { "region" => 1, "compound" => 2, "scavenging" or "clinic" => 3, "industry" => 4, "registers" => 5, _ => 0 };
+        if (route is "clinic" or "scavenging") Scavenging.Tabs.SelectedIndex = route == "clinic" ? 1 : 0;
+        UpdateNavigation();
+    }
+    private void UpdateNavigation()
+    {
+        foreach (var (index, button) in _navigation) button.Classes.Set("active", index == WorkspaceTabs.SelectedIndex);
+        string[] paths = ["Overview / home", "Field operations / regional survey", "Infrastructure / compound plan", "Field operations / expeditions & clinic", "Systems / industry & computing", "Records / compound registers"];
+        if (WorkspaceTabs.SelectedIndex is >= 0 and < 6) _breadcrumb.Text = paths[WorkspaceTabs.SelectedIndex].ToUpperInvariant();
+    }
+    private static TextBlock Label(string text, double size = 13, string color = ConsoleUi.Ink) => new()
     { Text = text, FontSize = size, Foreground = new SolidColorBrush(Color.Parse(color)), VerticalAlignment = VerticalAlignment.Center };
     private static void Add(Grid grid, Control control, int row, int column = 0)
     { Grid.SetRow(control, row); Grid.SetColumn(control, column); grid.Children.Add(control); }
@@ -130,8 +160,8 @@ public sealed class MainWindow : Window
         var button = new Button { Content = title, Name = name, Margin = new Thickness(0, 0, 6, 4), Padding = new Thickness(10, 7) };
         button.Click += (_, _) => action(); return button;
     }
-    private void ToggleRun() { if (_timer.IsEnabled) Pause(); else { _timer.Start(); _run.Content = "Pause"; } }
-    private void Pause() { _timer.Stop(); _run.Content = "Run"; }
+    private void ToggleRun() { if (_timer.IsEnabled) Pause(); else { _timer.Start(); _run.Content = "Pause"; _runState.Text = "RUNNING"; } }
+    private void Pause() { _timer.Stop(); _run.Content = "Run"; _runState.Text = "PAUSED"; }
     private void OnCell(CellPosition cell, bool inspectOnly)
     {
         Map.SelectedCell = cell;
@@ -157,8 +187,8 @@ public sealed class MainWindow : Window
     {
         var report = Session.Report;
         Map.Report = report;
-        _clock.Text = $"Tick {report.Tick} · day {Session.World.Clock.Day + 1} · {24m / Session.World.Clock.Time.TicksPerDay * 60:0} min/tick";
-        _mass.Text = $"{report.Inventory.StoredKg:0.##} kg stored   /   {report.Inventory.InTransitKg:0.##} kg carried   /   {report.TotalTrackedKg:0.##} kg tracked";
+        _clock.Text = $"DAY {Session.World.Clock.Day + 1:00}   /   TICK {report.Tick:0000}";
+        _mass.Text = $"MASS LEDGER  /  {report.TotalTrackedKg:0.##} kg tracked";
         _status.Text = Session.Status;
         Table("Materials", ["Material / batch", "Store", "kg", "Free kg", "Purity / known contamination"], "3*,2*,*,*,3*",
             report.Inventory.Batches.Select(b => new[] { $"{b.MaterialId} / {b.Id}", b.StockpileId, $"{b.QuantityKg:0.##}", $"{b.AvailableKg:0.##}", $"{b.Quality.Purity:P0} · {b.Quality.Grade}" + string.Concat(b.Quality.Contaminants.Select(c => $" · {c.Key} {c.Value:P0}")) }));
@@ -173,8 +203,8 @@ public sealed class MainWindow : Window
         Table("Services", ["Fixture / room", "Condition", "Power kW", "Water L/h", "Service"], "2*,*,*,*,3*",
             report.Buildings.Select(b => { var u = report.Utilities.FirstOrDefault(u => u.BuildingId == b.Id); return new[] { b.Name, $"{b.Condition:P0}", $"{u?.PowerAllocatedKw ?? 0} / {u?.PowerRequiredKw ?? 0}", $"{u?.WaterAllocatedLph ?? 0} / {u?.WaterRequiredLph ?? 0}", b.Operational ? "Operational" : b.BlockedReason ?? "Unavailable" }; })
                 .Concat(report.Rooms.Select(r => new[] { r.Name, "—", "—", "—", r.Status })));
-        var events = _tables["Events"]; events.Children.Clear();
-        foreach (string entry in report.RecentEvents.Reverse()) events.Children.Add(Label(entry, 12));
+        Table("Events", ["Activity / newest first"], "*", report.RecentEvents.Reverse().Select(entry => new[] { entry }));
+        Home.Refresh();
         Industry.Refresh();
         Scavenging.Refresh();
         Region.Refresh();
@@ -182,19 +212,14 @@ public sealed class MainWindow : Window
     }
     private void Table(string name, string[] headings, string widths, IEnumerable<string[]> data)
     {
-        var panel = _tables[name]; panel.Children.Clear();
-        void Row(string[] cells, bool header)
-        {
-            var grid = new Grid { ColumnDefinitions = new ColumnDefinitions(widths), ColumnSpacing = 12, Margin = new Thickness(8, 5) };
-            for (int i = 0; i < cells.Length; i++)
-            {
-                var text = Label(cells[i], header ? 11 : 12, header ? "#9DB2BD" : "#E4EDF0"); text.TextWrapping = TextWrapping.Wrap;
-                if (header) text.FontWeight = FontWeight.SemiBold;
-                Add(grid, text, 0, i);
-            }
-            panel.Children.Add(new Border { Background = new SolidColorBrush(Color.Parse(header ? "#273844" : "#1D2B36")), Child = grid });
-        }
-        Row(headings, true); foreach (var cells in data) Row(cells, false);
+        _records[name] = (headings, widths, data.ToArray());
+        RenderRecord(name);
+    }
+    private void FilterRecords() { foreach (var name in _records.Keys) RenderRecord(name); }
+    private void RenderRecord(string name)
+    {
+        var record = _records[name]; string filter = _recordFilter.Text?.Trim() ?? "";
+        ConsoleUi.Table(_tables[name], record.Headers, record.Widths, record.Rows.Where(row => row.Any(cell => cell.Contains(filter, StringComparison.OrdinalIgnoreCase))));
     }
     private void UpdateInspector()
     {

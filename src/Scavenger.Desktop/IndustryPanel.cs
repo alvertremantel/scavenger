@@ -17,6 +17,8 @@ public sealed record Choice(string Id, string Label)
 public sealed class IndustryPanel : UserControl
 {
     private readonly GameSession _session;
+    private bool _refreshing;
+    private readonly Grid _flow = new() { ColumnDefinitions = new ColumnDefinitions("*,*,*,*"), ColumnSpacing = 10 };
     private readonly Dictionary<string, StackPanel> _rows = [];
     private readonly TextBlock _machine = Text(""), _energy = Text(""), _dataset = Text("");
     private readonly ComboBox _recipe = Select("RecipeSelector"), _order = Select("OrderSelector"), _production = Select("ProductionJobSelector");
@@ -27,29 +29,32 @@ public sealed class IndustryPanel : UserControl
     private readonly CheckBox _wholeUnit = new() { Name = "TransferWholeUnit", Content = "Whole component", IsChecked = true };
     private readonly CheckBox _automatic = new() { Content = "Use installed automation", Name = "AutomaticProcess" };
     private readonly NumericUpDown _targetKg = new() { Name = "StockTarget", Minimum = .1m, Maximum = 20, Increment = .1m, Value = 1.6m, Width = 100, FormatString = "0.00" };
+    public event Action<string>? Navigate;
     public TabControl Tabs { get; } = new() { Name = "IndustryTabs" };
-    public ListBox ComponentSelector { get; } = new() { Name = "ComponentSelector", SelectionMode = SelectionMode.Multiple, Height = 150 };
+    public ListBox ComponentSelector { get; } = new() { Name = "ComponentSelector", SelectionMode = SelectionMode.Multiple, Height = 210 };
     public IndustryPanel(GameSession session)
     {
         _session = session;
         var production = Page("Production", "ProductionTab");
-        production.Children.Add(Text("Recovered HDPE → wash → dry → shred → mould noncritical repair clips. Inputs travel to the station; products and waste need storage and delivery.", 12));
+        production.Children.Add(_flow);
+        production.Children.Add(ConsoleUi.Bar(ConsoleUi.Text("Inputs, products and captured waste require physical delivery.", 12, ConsoleUi.Muted),
+            ConsoleUi.Button("Recipe library →", () => Tabs.SelectedIndex = 6)));
         production.Children.Add(Bar(_recipe, _automatic, Button("Queue batch", QueueProcess, "QueueProcessButton"), _targetKg,
             Button("Maintain stock", MaintainStock, "MaintainStockButton"), Button("Recovery orders", _session.BeginDemo, "RecoveryOrdersButton")));
         production.Children.Add(Bar(_order, Button("Pause / resume order", ToggleOrder, "ToggleOrderButton"), _production,
             Button("Cancel batch", () => SubmitSelected(_production, id => new CancelProductionCommand(id)), "CancelProcessButton")));
-        AddTable(production, "Orders"); AddTable(production, "Recipes"); AddTable(production, "Production");
+        AddTable(production, "Orders"); AddTable(production, "Production");
 
         var hardware = Page("Hardware", "HardwareTab");
         hardware.Children.Add(Text("Select individual units below. Diagnose first, make a replacement clip for the cooler, then assemble compatible parts. Hardware changes require shutdown and cancelled workloads.", 12));
-        hardware.Children.Add(Bar(_computer, _technician, Button("Power on / off", ToggleComputer, "ComputerPowerButton")));
+        hardware.Children.Add(Bar(Button("Power on / off", ToggleComputer, "ComputerPowerButton"), ConsoleUi.Button("Store transfers →", () => Tabs.SelectedIndex = 5)));
         hardware.Children.Add(Bar(Button("Diagnose selected", () => HardwareTask(ComputerTaskKind.DiagnoseComponents), "DiagnoseButton"),
             Button("Repair selected unit", () => HardwareTask(ComputerTaskKind.RepairComponent), "RepairComponentButton"),
             Button("Service selected unit", () => HardwareTask(ComputerTaskKind.ServiceComponent), "ServiceComponentButton"),
             Button("Assemble selected", () => HardwareTask(ComputerTaskKind.Assemble), "AssembleButton"),
             Button("Remove selected unit", () => HardwareTask(ComputerTaskKind.RemoveComponent), "RemoveComponentButton")));
-        hardware.Children.Add(_machine);
-        hardware.Children.Add(ComponentSelector);
+
+        hardware.Children.Add(ConsoleUi.Section("Component selection", ComponentSelector, "Select multiple individual units for diagnosis or assembly."));
         AddTable(hardware, "Components");
 
         var archives = Page("Archives", "ArchivesTab");
@@ -59,10 +64,10 @@ public sealed class IndustryPanel : UserControl
         AddTable(archives, "Archives");
 
         var compute = Page("Compute", "ComputeTab");
-        compute.Children.Add(Text("Rules enable connected timer equipment. A model also needs weights, tokenizer, runtime, studied knowledge, labelled samples and independent validation. These are simulated workloads and authored model scores.", 12));
+        compute.Children.Add(Text("Rules enable connected timer equipment. A model also needs weights, tokenizer, runtime, studied knowledge, labelled samples and independent validation. Deployment requires independent validation before a model can monitor equipment.", 12));
         compute.Children.Add(Bar(_target, Button("Fit selected sensor / controller", () => HardwareTask(ComputerTaskKind.InstallTelemetry), "TelemetryButton"),
             Button("Start rule monitor", () => MachineTask(ComputerTaskKind.RuleMonitor), "RuleMonitorButton")));
-        compute.Children.Add(_dataset);
+        compute.Children.Add(ConsoleUi.Section("Telemetry readiness", _dataset));
         compute.Children.Add(Bar(Button("Label telemetry", () => MachineTask(ComputerTaskKind.LabelTelemetry), "LabelTelemetryButton"),
             Button("Train 4B adapter", () => MachineTask(ComputerTaskKind.TrainAdapter, "model-4b"), "TrainAdapterButton"), _adapter,
             Button("Validate adapter", () => MachineTask(ComputerTaskKind.ValidateAdapter, Selected(_adapter)), "ValidateAdapterButton"),
@@ -74,28 +79,50 @@ public sealed class IndustryPanel : UserControl
         energy.Children.Add(Text("Each tick is 15 minutes. Fuel generation, network priority, battery charge and losses are accounted in kW and kWh. A powered computer draws idle power plus claimed workloads through its PSU.", 12));
         energy.Children.Add(Bar(Button("Start / stop generator", ToggleGenerator, "GeneratorButton"), Button("Connect / isolate battery", ToggleBattery, "BatteryButton"),
             Button("Deliver 6 kg diesel", Refuel, "RefuelButton")));
-        energy.Children.Add(_energy); AddTable(energy, "Power");
+        energy.Children.Add(ConsoleUi.Section("Energy balance", _energy)); AddTable(energy, "Power");
         var transfers = Page("Transfers", "TransfersTab");
         transfers.Children.Add(Text("Move bulk supplies, whole components, or leftover worksite stock. Deliver steel to the workshop for fixture repairs; fuel to the generator tank; effluent to the waste store.", 12));
         transfers.Children.Add(Bar(_batch, _destination, _carrier, _transferKg, _wholeUnit, Button("Dispatch transfer", Transfer, "TransferButton")));
         transfers.Children.Add(Bar(_haul, Button("Cancel unloaded haul", () => SubmitSelected(_haul, id => new CancelHaulCommand(id)), "CancelTransferButton")));
         AddTable(transfers, "Transfers");
-        Content = Tabs; Refresh();
+        var recipes = Page("Recipes", "RecipesTab");
+        recipes.Children.Add(ConsoleUi.Bar(ConsoleUi.Text("Conversion specifications / input grades, purity gates, products and captured waste.", 12, ConsoleUi.Muted),
+            ConsoleUi.Button("Production board →", () => Tabs.SelectedIndex = 0)));
+        AddTable(recipes, "Recipes");
+        var root = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*"), RowSpacing = 12 };
+        root.Children.Add(ConsoleUi.PageHeading("Systems & industry", "Material conversion, recovered computers and the power that keeps them running."));
+        var machineContext = new StackPanel { Spacing = 10 };
+        machineContext.Children.Add(ConsoleUi.Bar(ConsoleUi.Field("Computer", _computer), ConsoleUi.Field("Technician", _technician),
+            ConsoleUi.Button("Materials register →", () => Navigate?.Invoke("register/0"))));
+        machineContext.Children.Add(_machine);
+        Grid.SetRow(Tabs, 2); root.Children.Add(Tabs);
+        var context = ConsoleUi.Frame(machineContext, new Thickness(14, 10)); Grid.SetRow(context, 1); root.Children.Add(context);
+        context.IsVisible = false;
+        Tabs.SelectionChanged += (_, _) => context.IsVisible = Tabs.SelectedIndex is 1 or 2 or 3;
+        _computer.SelectionChanged += (_, _) => { if (!_refreshing) Refresh(); };
+        Content = root; Refresh();
     }
     private StackPanel Page(string title, string name)
     {
-        var panel = new StackPanel { Spacing = 8 };
-        Tabs.Items.Add(new TabItem { Header = title, Name = name, Content = new ScrollViewer { Content = panel, Margin = new Thickness(6, 8) } });
+        var panel = new StackPanel { Spacing = 16 };
+        Tabs.Items.Add(new TabItem { Header = title, Name = name, Content = new ScrollViewer { Content = panel, Margin = new Thickness(0, 14, 0, 0) } });
         return panel;
     }
     private void AddTable(StackPanel page, string name)
-    { var rows = new StackPanel { Spacing = 2 }; _rows.Add(name, rows); page.Children.Add(rows); }
-    private static TextBlock Text(string value, double size = 12) => new() { Text = value, FontSize = size, Foreground = Brushes.LightGray, TextWrapping = TextWrapping.Wrap };
+    { var rows = new StackPanel(); _rows.Add(name, rows); page.Children.Add(ConsoleUi.Section(name, rows)); }
+    private static TextBlock Text(string value, double size = 12) => ConsoleUi.Text(value, size, ConsoleUi.Muted);
     private static ComboBox Select(string name) => new() { Name = name, MinWidth = 160, MaxWidth = 310 };
-    private static Button Button(string text, Action action, string name)
-    { var button = new Button { Content = text, Name = name, Margin = new Thickness(0, 0, 6, 4), Padding = new Thickness(9, 6) }; button.Click += (_, _) => action(); return button; }
-    private static WrapPanel Bar(params Control[] controls)
-    { var panel = new WrapPanel { Orientation = Orientation.Horizontal }; foreach (var control in controls) { control.Margin = new Thickness(0, 0, 8, 4); panel.Children.Add(control); } return panel; }
+    private static Button Button(string text, Action action, string name) => ConsoleUi.Button(text, action, name, name is "QueueProcessButton" or "TransferButton" or "AssembleButton");
+    private static Control Bar(params Control[] controls)
+    {
+        string Label(Control c) => c.Name switch
+        {
+            "RecipeSelector" => "Recipe", "StockTarget" => "Target kg", "OrderSelector" => "Standing order", "ProductionJobSelector" => "Active batch",
+            "AssetSelector" => "Recovered asset", "TelemetryTargetSelector" => "Target equipment", "AdapterSelector" => "Trained adapter", "ComputerJobSelector" => "Active task",
+            "TransferBatchSelector" => "Source batch", "TransferDestinationSelector" => "Receiving store", "TransferCarrierSelector" => "Carrier", "TransferQuantity" => "Bulk kg", "TransferJobSelector" => "Active haul", _ => ""
+        };
+        return ConsoleUi.Frame(ConsoleUi.Bar(controls.Select(c => Label(c) is { Length: > 0 } label ? ConsoleUi.Field(label, c) : c).ToArray()), new Thickness(14, 12, 14, 4));
+    }
     private static string? Selected(ComboBox selector) => (selector.SelectedItem as Choice)?.Id;
     private string Computer => Selected(_computer) ?? "rig-1";
     private int Technician => int.TryParse(Selected(_technician), out int id) ? id : 1;
@@ -143,10 +170,22 @@ public sealed class IndustryPanel : UserControl
     }
     public void Refresh()
     {
+        if (_refreshing) return; _refreshing = true;
+        try
+        {
         bool industrial = _session.World.Has<ProductionModule>(); IsEnabled = industrial;
         if (!industrial) { _machine.Text = "This save predates industrial operations. Reset to start the industrial scenario."; return; }
         var world = _session.World; var production = world.Module<ProductionModule>(); var computing = world.Module<ComputingModule>(); var energy = world.Module<EnergyModule>();
         var report = IndustryReport.Capture(world); var inventory = world.Module<InventoryModule>();
+        _flow.Children.Clear();
+        var stages = new[] { ("Wash & sort", "polymer.hdpe.washed"), ("Dry", "polymer.hdpe.dry"), ("Shred", "polymer.hdpe.flakes"), ("Mould", "part.polymer") };
+        for (int i = 0; i < stages.Length; i++)
+        {
+            decimal stock = inventory.Batches.Where(b => b.MaterialId == stages[i].Item2).Sum(b => b.QuantityKg);
+            var stage = new StackPanel { Spacing = 4 }; stage.Children.Add(ConsoleUi.Eyebrow($"0{i + 1} / {stages[i].Item1}"));
+            stage.Children.Add(ConsoleUi.Text($"{stock:0.##} kg", 22)); stage.Children.Add(ConsoleUi.Text("stored output", 10, ConsoleUi.Muted));
+            var card = ConsoleUi.Frame(stage, new Thickness(14, 12)); Grid.SetColumn(card, i); _flow.Children.Add(card);
+        }
         Choices(_recipe, production.Recipes.Select(r => new Choice(r.Id, r.Name)));
         Choices(_computer, computing.Computers.Select(c => new Choice(c.Id, c.Id)));
         Choices(_technician, world.Module<WorkforceModule>().Staff.Where(w => w.Skills.Rating("electronics") >= 40 || w.Skills.Rating("computing") >= 40).Select(w => new Choice(w.Id.ToString(), w.Name)));
@@ -160,7 +199,7 @@ public sealed class IndustryPanel : UserControl
         Choices(_destination, inventory.Stockpiles.Where(s => !s.Id.StartsWith("worksite/", StringComparison.Ordinal) && !s.Id.StartsWith("staging/", StringComparison.Ordinal)).OrderBy(s => s.Id == "workshop" ? 0 : 1).Select(s => new Choice(s.Id, $"{s.Id} / free {inventory.FreeCapacityKg(s.Id):0.##} kg")));
         Choices(_carrier, world.Module<WorkforceModule>().Staff.Where(w => w.Skills.Rating("hauling") >= 20).OrderBy(w => w.Id == 2 ? 0 : 1).Select(w => new Choice(w.Id.ToString(), w.Name)));
         Choices(_haul, world.Module<LogisticsModule>().Jobs.Where(j => j.Active).Select(j => new Choice(j.Request.Id, j.Request.Id)));
-        if (ComponentSelector.Items.Count != computing.Components.Count)
+        if (!ComponentSelector.Items.Cast<Choice>().Select(c => c.Id).SequenceEqual(computing.Components.Select(c => c.Id)))
             ComponentSelector.ItemsSource = computing.Components.Select(c => new Choice(c.Id, $"{c.Id} · {computing.Definition(c.DefinitionId)!.Name}")).ToArray();
         var machine = report.Machines.First(m => m.Id == Computer);
         _machine.Text = $"{machine.Id}: {(machine.Powered ? "powered on" : "off")} · {machine.Components.Count} installed units · RAM {machine.RamGiB} GiB · VRAM {machine.VramGiB} GiB · disk {machine.UsedStorageGiB:0.000} / {machine.StorageGiB} GiB · requested {machine.RequestedKw:0.000} kW\n{machine.HardwareReason ?? "Compatible diagnosed assembly"}";
@@ -176,15 +215,11 @@ public sealed class IndustryPanel : UserControl
         Table("Adapters", "2*,*,*,*,2*", ["Adapter", "Training", "Held-out", "Score", "State"], computing.Adapters.Select(a => new[] { a.Id, a.TrainingIds.Count.ToString(), a.ValidationIds.Count.ToString(), $"{a.ValidationScore:P0}", a.ValidationScore >= .75m ? "Eligible for deployment" : "Validation required" }));
         Table("Power", "2*,*,*,2*", ["Fixture", "Requested kW", "Served kW", "Service"], world.Module<UtilitiesModule>().Services.Where(s => s.PowerRequiredKw > 0).Select(s => new[] { s.BuildingId, $"{s.PowerRequiredKw:0.000}", $"{s.PowerAllocatedKw:0.000}", s.BlockedReason ?? "Served" }));
         Table("Transfers", "2*,*,2*,2*,3*", ["Haul", "kg", "State", "Destination", "Blocker"], world.Module<LogisticsModule>().Jobs.TakeLast(100).Select(j => new[] { j.Request.Id, j.Request.QuantityKg.ToString(), j.Status.ToString(), world.Module<LogisticsModule>().FindRoute(j.Request.RouteId)!.DestinationId, j.BlockedReason ?? "—" }));
+            }
+        finally { _refreshing = false; }
     }
     private void Table(string name, string widths, string[] header, IEnumerable<string[]> values)
     {
-        var rows = _rows[name]; rows.Children.Clear();
-        foreach (var (cells, index) in values.Prepend(header).Select((v, i) => (v, i)))
-        {
-            var row = new Grid { ColumnDefinitions = new ColumnDefinitions(widths), ColumnSpacing = 10, Margin = new Thickness(7, 5) };
-            for (int i = 0; i < cells.Length; i++) { var text = Text(cells[i], index == 0 ? 11 : 12); if (index == 0) text.Foreground = Brushes.LightSteelBlue; Grid.SetColumn(text, i); row.Children.Add(text); }
-            rows.Children.Add(new Border { Background = new SolidColorBrush(Color.Parse(index == 0 ? "#273844" : "#1D2B36")), Child = row });
-        }
+        ConsoleUi.Table(_rows[name], header, widths, values);
     }
 }
