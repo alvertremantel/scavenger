@@ -50,6 +50,8 @@ public sealed class CompoundTransportDriver : ITransportDriver
         var target = inventory.FindStockpile(locationId)?.Position;
         if (target is null) return new TransportStep(false, false, false, "Store has no physical interaction cell.");
         var move = Navigation.StepTowards(compound, job.Request.WorkerId, target);
+        if (job.Status == HaulStatus.InTransit && move.Moved && job.Cargo is { } cargo)
+            Skills.SkillsModule.Credit(world, job.Request.WorkerId, "hauling", Math.Min(1, cargo.QuantityKg / 6));
         return new TransportStep(job.Status == HaulStatus.Reserved && move.Arrived,
             job.Status == HaulStatus.InTransit && move.Arrived, move.Moved, move.BlockedReason);
     }

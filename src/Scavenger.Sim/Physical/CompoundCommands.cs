@@ -124,6 +124,7 @@ public sealed class QueuePhysicalHaulCommand(HaulRequest request) : IPersistentC
     public bool CanExecute(World world)
     {
         if (!new QueueHaulCommand(Request).CanExecute(world)) return false;
+        if (world.Module<InventoryModule>().FindBatch(Request.BatchId) is { } bookBatch && Skills.SkillCatalogue.IsBook(bookBatch.MaterialId) && Request.QuantityKg != Skills.SkillBook.MassKg) return false;
         if (world.TryModule<Industry.ComputingModule>(out var computing)
             && world.Module<InventoryModule>().FindBatch(Request.BatchId) is { } batch
             && computing.Components.FirstOrDefault(c => c.MaterialId == batch.MaterialId) is { } component

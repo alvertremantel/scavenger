@@ -8,6 +8,7 @@ using Scavenger.Sim.Scavenging;
 using Scavenger.Sim.Region;
 
 CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+if (args.Contains("--play") || args.Contains("--script")) return Scavenger.Cli.GameConsole.Run(args, Console.In, Console.Out, Console.Error);
 bool json = args.Contains("--json"), roundtrip = args.Contains("--roundtrip"), legacy = args.Contains("--legacy"), industry = args.Contains("--industry"), scavenging = args.Contains("--scavenging");
 bool generated = args.Contains("--world"), walkthrough = args.Contains("--walkthrough");
 SettlementMotif? motif = null; MapLayer layer = MapLayer.Terrain;
@@ -48,7 +49,7 @@ for (int step = 0; step < ticks; step++)
 }
 var report = CompoundReport.Capture(scheduler.World);
 if (mapPath is not null) { string path = Path.GetFullPath(mapPath); Directory.CreateDirectory(Path.GetDirectoryName(path)!); File.WriteAllText(path, RegionMapExport.Svg(scheduler.World.Module<RegionModule>(), layer)); }
-if (json) Console.WriteLine(generated ? JsonSerializer.Serialize(new { Physical = PhysicalReport.Capture(scheduler.World), Industry = IndustryReport.Capture(scheduler.World), Geography = scheduler.World.Module<RegionModule>().ToSnapshot(), Region = scheduler.World.Module<ScavengingModule>().ToSnapshot() }, SaveManager.Options) : scavenging ? JsonSerializer.Serialize(new { Physical = PhysicalReport.Capture(scheduler.World), Industry = IndustryReport.Capture(scheduler.World), Region = scheduler.World.Module<ScavengingModule>().ToSnapshot() }, SaveManager.Options) : industry ? JsonSerializer.Serialize(new { Physical = PhysicalReport.Capture(scheduler.World), Industry = IndustryReport.Capture(scheduler.World) }, SaveManager.Options) : legacy ? JsonSerializer.Serialize(report, SaveManager.Options)
+if (json) Console.WriteLine(generated ? JsonSerializer.Serialize(new { Skills = scheduler.World.Module<Scavenger.Sim.Skills.SkillsModule>().ToSnapshot(), Physical = PhysicalReport.Capture(scheduler.World), Industry = IndustryReport.Capture(scheduler.World), Geography = scheduler.World.Module<RegionModule>().ToSnapshot(), Region = scheduler.World.Module<ScavengingModule>().ToSnapshot() }, SaveManager.Options) : scavenging ? JsonSerializer.Serialize(new { Skills = scheduler.World.Module<Scavenger.Sim.Skills.SkillsModule>().ToSnapshot(), Physical = PhysicalReport.Capture(scheduler.World), Industry = IndustryReport.Capture(scheduler.World), Region = scheduler.World.Module<ScavengingModule>().ToSnapshot() }, SaveManager.Options) : industry ? JsonSerializer.Serialize(new { Skills = scheduler.World.Module<Scavenger.Sim.Skills.SkillsModule>().ToSnapshot(), Physical = PhysicalReport.Capture(scheduler.World), Industry = IndustryReport.Capture(scheduler.World) }, SaveManager.Options) : legacy ? JsonSerializer.Serialize(report, SaveManager.Options)
     : JsonSerializer.Serialize(PhysicalReport.Capture(scheduler.World), SaveManager.Options));
 else
 {

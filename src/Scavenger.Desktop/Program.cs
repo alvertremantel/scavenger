@@ -26,7 +26,7 @@ public static class Program
             if (args[i] == "--width" && i + 1 < args.Length && int.TryParse(args[++i], out width) && width is >= 1050 and <= 2560) continue;
             if (args[i] == "--height" && i + 1 < args.Length && int.TryParse(args[++i], out height) && height is >= 780 and <= 1600) continue;
             if (args[i] == "--view" && i + 1 < args.Length)
-            { view = args[++i]; if (new[] { "home", "compound", "production", "hardware", "archives", "compute", "energy", "transfers", "recipes", "scavenging", "clinic", "yields", "region", "region-setup", "materials", "stores", "workers", "jobs", "services", "events" }.Contains(view)) continue; }
+            { view = args[++i]; if (new[] { "home", "compound", "crew", "production", "hardware", "archives", "compute", "energy", "transfers", "recipes", "scavenging", "clinic", "yields", "region", "region-setup", "materials", "stores", "workers", "jobs", "services", "events" }.Contains(view)) continue; }
             return Usage();
         }
         using var session = HeadlessUnitTestSession.StartNew(typeof(RenderAppBuilder));
@@ -57,6 +57,6 @@ public static class Program
         return 0;
     }
     private static int Usage()
-    { Console.Error.WriteLine("Usage: Scavenger.Desktop [--screenshot path.png [--ticks 0..100000] [--view home|compound|production|hardware|archives|compute|energy|transfers|recipes|scavenging|clinic|yields|region|region-setup|materials|stores|workers|jobs|services|events] [--seed N] [--layout compact|avenue|twin-centers] [--layer Terrain|Districts|Elevation|Moisture|FloodRisk] [--width 1050..2560] [--height 780..1600] [--walkthrough]]"); return 2; }
+    { Console.Error.WriteLine("Usage: Scavenger.Desktop [--screenshot path.png [--ticks 0..100000] [--view home|compound|crew|production|hardware|archives|compute|energy|transfers|recipes|scavenging|clinic|yields|region|region-setup|materials|stores|workers|jobs|services|events] [--seed N] [--layout compact|avenue|twin-centers] [--layer Terrain|Districts|Elevation|Moisture|FloodRisk] [--width 1050..2560] [--height 780..1600] [--walkthrough]]"); return 2; }
     public static AppBuilder BuildAvaloniaApp() => AppBuilder.Configure<App>().UsePlatformDetect().WithInterFont();
 }

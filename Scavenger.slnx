@@ -6,6 +6,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Scavenger.Sim.Tests/Scavenger.Sim.Tests.csproj" />
+    <Project Path="tests/Scavenger.Cli.Tests/Scavenger.Cli.Tests.csproj" />
     <Project Path="tests/Scavenger.Desktop.Tests/Scavenger.Desktop.Tests.csproj" />
   </Folder>
 </Solution>

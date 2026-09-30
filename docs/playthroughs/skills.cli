@@ -1,0 +1,27 @@
+# Default seed: recover Noor's next construction volume, then train Ivo into a new role.
+find book/construction/7
+expedition apartments-005 2 manual-1-construction-7=0.4
+until last
+books
+study 3 construction
+advance 20
+save saves/skills-playthrough.json
+load saves/skills-playthrough.json
+until last
+skills 3 construction
+practice 3 construction
+until last
+skills 3 construction
+find book/mechanical/2
+expedition apartments-010 2 manual-2-mechanical-2=0.4
+until last
+books
+skills 2 mechanical
+study 2 mechanical
+until last
+practice 2 mechanical 3
+until last
+skills 2 mechanical
+save saves/skills-playthrough-complete.json
+report artifacts/skills/playthrough-report.json
+quit

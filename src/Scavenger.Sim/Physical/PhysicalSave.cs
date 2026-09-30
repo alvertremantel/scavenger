@@ -25,11 +25,18 @@ public static class PhysicalSave
         Industry.IndustrySave.RegisterAll(registry);
         Scavenging.ScavengingSave.RegisterAll(registry);
         Region.RegionModule.Register(registry);
+        Skills.SkillsSave.Register(registry);
         return registry;
     }
     public static Scheduler Load(string json)
     {
         var loaded = SaveManager.Load(json, CreateRegistry());
+        if (!loaded.World.Has<Skills.SkillsModule>())
+        {
+            if (loaded.CommandLog.Any(c => c.Command is Skills.StartLearningCommand or Skills.CancelLearningCommand))
+                throw new InvalidOperationException("A save with learning commands is missing its progression module.");
+            Skills.SkillsModule.Initialize(loaded.World);
+        }
         ValidateWorld(loaded.World);
         // Industry services describe the completed energy interval; the next preparation derives fresh budgets.
         if (!loaded.World.Has<Industry.EnergyModule>()) UtilitySystem.Recalculate(loaded.World);
@@ -129,6 +136,7 @@ public static class PhysicalSave
         foreach (var reservation in workforce.Reservations.Where(r => r.Owner.StartsWith("scavenger.build/", StringComparison.Ordinal)))
             if (!construction.Jobs.Any(j => j.Active && j.Owner == reservation.Owner && j.Request.BuilderId == reservation.StaffId))
                 throw new InvalidOperationException("Orphaned construction labor claim.");
+        if (world.Has<Skills.SkillsModule>()) Skills.SkillsSave.Validate(world);
         if (world.Has<Industry.ProductionModule>()) Industry.IndustrySave.Validate(world);
         if (world.Has<Scavenging.ScavengingModule>()) Scavenging.ScavengingSave.Validate(world);
         if (world.Has<Region.RegionModule>()) Region.RegionModule.Validate(world);

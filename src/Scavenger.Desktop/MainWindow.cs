@@ -30,6 +30,7 @@ public sealed class MainWindow : Window
     public ScavengingPanel Scavenging { get; }
     public RegionPanel Region { get; }
     public TabControl WorkspaceTabs { get; } = new() { Name = "WorkspaceTabs" };
+    public SkillsPanel Learning { get; }
     public IndustryPanel Industry { get; }
     public MapWorkspace CompoundWorkspace { get; }
     private readonly Dictionary<string, Control> _compoundViews = [];
@@ -48,6 +49,8 @@ public sealed class MainWindow : Window
     {
         Session = new GameSession(regional, generated);
         Region = new RegionPanel(Session); Scavenging = new ScavengingPanel(Session);
+        Learning = new SkillsPanel(Session);
+        Learning.FindMaterial += query => { WorkspaceTabs.SelectedIndex = 1; Region.SearchSupplies(query); };
         Industry = new IndustryPanel(Session); Home = new HomePanel(Session);
         Title = "Scavenger / Compound survival";
         Width = 1440; Height = 1000; MinWidth = 1050; MinHeight = 780;
@@ -88,12 +91,13 @@ public sealed class MainWindow : Window
             Action("Clinic", () => Navigate("clinic"), "ClinicButton"),
             Action("Production", () => Navigate("industry/0"), "CompoundProductionButton"),
             Action("Power", () => Navigate("industry/4"), "CompoundPowerButton"),
+            Action("Crew", () => ShowCompound("crew"), "CompoundCrewButton"),
             Action("Tasks", () => ShowCompound("tasks"), "CompoundTasksButton"));
         CompoundWorkspace = new MapWorkspace("Compound", Map, compoundTools, new[] {
             new Choice("inspect", "Inspect / repair"), new Choice("build", "Build / utilities"),
             new Choice("clinic", "Clinic / treatment"), new Choice("production", "Production / stock targets"),
             new Choice("power", "Power / generator fuel"), new Choice("transfers", "Logistics / transfers"),
-            new Choice("computers", "Computers / automation"), new Choice("crew", "Crew / assignments"), new Choice("tasks", "Tasks / progress") });
+            new Choice("computers", "Computers / automation"), new Choice("crew", "Crew / skills & assignments"), new Choice("tasks", "Tasks / progress") });
         _inspector.TextWrapping = TextWrapping.Wrap; _inspector.FontSize = 12; _inspector.LineHeight = 20;
         _compoundViews["inspect"] = new ScrollViewer { Content = new StackPanel { Spacing = 12, Children = {
             ConsoleUi.Text("Selected parcel", 20), _inspector, _inspectionActions,
@@ -109,7 +113,7 @@ public sealed class MainWindow : Window
         _compoundViews["clinic"] = Scavenging.ClinicView;
         foreach (string mode in new[] { "production", "power", "transfers", "computers" }) _compoundViews[mode] = Industry;
         _compoundViews["crew"] = new ScrollViewer { Content = new StackPanel { Spacing = 12, Children = {
-            ConsoleUi.Text("Crew & assignments", 20), _duties, _staffActions,
+            Learning, new Expander { Header = "Duties & project assignments", Content = new StackPanel { Spacing = 8, Children = { _duties, _staffActions } } },
             Action("Personnel register →", () => Navigate("register/2"), "InspectButton") } } };
         _compoundViews["tasks"] = new ScrollViewer { Content = _compoundTaskCards };
         CompoundWorkspace.ModeChanged += mode => ShowCompound(mode);
@@ -162,6 +166,7 @@ public sealed class MainWindow : Window
         { WorkspaceTabs.SelectedIndex = 3; OperationsTabs.SelectedIndex = register; }
         else if (route == "find/computer") { WorkspaceTabs.SelectedIndex = 1; Region.SearchSupplies("computer"); }
         else if (route is "scavenging" or "fieldteams") { WorkspaceTabs.SelectedIndex = 1; Region.Show(route == "fieldteams" ? "teams" : "plan"); if (route == "scavenging") Scavenging.ShowPlanningStep(0); }
+        else if (route == "crew") { WorkspaceTabs.SelectedIndex = 2; ShowCompound("crew"); }
         else if (route == "clinic") { WorkspaceTabs.SelectedIndex = 2; ShowCompound("clinic"); }
         else { WorkspaceTabs.SelectedIndex = route switch { "region" => 1, "compound" or "industry" => 2, "registers" => 3, _ => 0 }; if (route == "compound") ShowCompound("inspect"); }
         UpdateNavigation();
@@ -299,6 +304,16 @@ public sealed class MainWindow : Window
         _compoundTaskCards.Children.Add(Action("Production tasks →", () => Navigate("industry/0")));
         _compoundTaskCards.Children.Add(Action("Transfers →", () => Navigate("industry/5"), "HaulButton"));
         _compoundTaskCards.Children.Add(Action("Recovery stock orders", Session.BeginDemo, "DemoButton"));
+        foreach (var job in Session.World.Module<Scavenger.Sim.Skills.SkillsModule>().Jobs.Where(j => j.Active))
+        {
+            string id = job.Plan.Id;
+            _compoundTaskCards.Children.Add(ConsoleUi.Frame(new StackPanel { Spacing = 8, Children = {
+                ConsoleUi.Text($"{job.Plan.Kind} · {job.Plan.SkillId} L{job.TargetLevel}", 13, ConsoleUi.Accent),
+                ConsoleUi.Text($"Member {job.Plan.WorkerId} · {job.Status} · {job.Effort:0.##} effort\n{job.BlockedReason}", 11, ConsoleUi.Muted),
+                ConsoleUi.Button("Cancel; keep learning progress", () => Session.Submit(new Scavenger.Sim.Skills.CancelLearningCommand(id)), "TaskCancelLearning_" + id)
+            } }, new Thickness(10)));
+        }
+        Learning.Refresh();
         Home.Refresh();
         Industry.Refresh();
         Scavenging.Refresh();

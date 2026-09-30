@@ -185,6 +185,7 @@ public static class IndustrySave
                 || equipment.OwnerOf(claim.Station) != owner) throw new InvalidOperationException("Industrial labor or access claim is inconsistent.");
         foreach (var claim in equipment.Claims)
             if (!labor.Any(l => l.Key == claim.Owner && l.Value.Station == claim.StationId)
+                && !(world.Has<Skills.SkillsModule>() && world.Module<Skills.SkillsModule>().Jobs.Any(j => j.Active && j.Plan.Kind == Skills.LearningKind.Practice && j.Owner == claim.Owner && Skills.SkillCatalogue.Find(j.Plan.SkillId)!.FixtureId == claim.StationId))
                 && !production.Jobs.Any(j => j.Plan.Automatic && j.Owner == claim.Owner && j.Plan.StationId == claim.StationId && j.Status is ProductionStatus.Walking or ProductionStatus.Processing)) throw new InvalidOperationException("Orphaned equipment claim.");
         foreach (var claim in workforce.Reservations.Where(c => c.Owner.StartsWith("scavenger.process/", StringComparison.Ordinal) || c.Owner.StartsWith("scavenger.computer/", StringComparison.Ordinal)))
             if (!labor.TryGetValue(claim.Owner, out var expected) || expected.Worker != claim.StaffId) throw new InvalidOperationException("Orphaned industry labor claim.");

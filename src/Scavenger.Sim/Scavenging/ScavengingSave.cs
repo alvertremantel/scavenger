@@ -53,7 +53,13 @@ public static class ScavengingSave
                         Require(assetIds.Add(asset.Id) && asset.SourceMediaId == id && (delivered == (computing.Asset(asset.Id) is not null)), "Remote archive ownership/identity is missing or duplicated.");
                     Require(delivered == (computing.Component(id) is not null) && (!delivered || computing.Component(id)!.DefinitionId == s.ComponentModel), "Recovered unit has missing or premature compound ownership.");
                 }
-                else Require(inventory.FindMaterial(s.MaterialId) is not null && (s.Assets?.Count ?? 0) == 0, "Remote salvage refers to an unknown material.");
+                else
+                {
+                    if (Skills.SkillCatalogue.IsBook(s.MaterialId)) Require(Skills.SkillCatalogue.Book(s.MaterialId) is not null && s.InitialKg == Skills.SkillBook.MassKg
+                        && (location.Remaining(s.Id) == 0 || location.Remaining(s.Id) == s.InitialKg)
+                        && (snapshot.RemovedByRivals.GetValueOrDefault(s.Id) == 0 || snapshot.RemovedByRivals.GetValueOrDefault(s.Id) == s.InitialKg), "Fractional or invalid remote book.");
+                    Require(inventory.FindMaterial(s.MaterialId) is not null && (s.Assets?.Count ?? 0) == 0, "Remote salvage refers to an unknown material.");
+                }
             }
         }
         foreach (var e in module.Expeditions)
@@ -69,7 +75,7 @@ public static class ScavengingSave
             {
                 var spec = location!.Definition.Salvage.FirstOrDefault(s => s.Id == request.SalvageId);
                 Require(spec is not null && request.QuantityKg > 0 && request.QuantityKg <= spec.InitialKg
-                    && (spec.ComponentId is null || request.QuantityKg == spec.InitialKg)
+                    && ((spec.ComponentId is null && !Skills.SkillCatalogue.IsBook(spec.MaterialId)) || request.QuantityKg == spec.InitialKg)
                     && e.Plan.Team.Any(id => workforce.Find(id)!.Skills.Meets(spec.Qualification)), "Invalid recovery manifest qualification or mass.");
             }
             decimal toolKg = e.Plan.Manifest.Any(m => location!.Definition.Salvage.Single(s => s.Id == m.SalvageId).NeedsPrybar) ? 1 : 0;
@@ -90,7 +96,7 @@ public static class ScavengingSave
                 var spec = location.Definition.Salvage.FirstOrDefault(s => s.Id == cargo.SalvageId);
                 Require(index >= 0 && index < e.SearchIndex && spec is not null && cargo.MaterialId == spec.MaterialId
                     && cargo.QuantityKg > 0 && cargo.QuantityKg <= e.Plan.Manifest[index].QuantityKg
-                    && (spec.ComponentId is null || cargo.QuantityKg == spec.InitialKg)
+                    && ((spec.ComponentId is null && !Skills.SkillCatalogue.IsBook(spec.MaterialId)) || cargo.QuantityKg == spec.InitialKg)
                     && SameQuality(cargo.Quality, spec.Quality), "Cargo differs from its source object, quality or manifest.");
             }
             for (int i = 0; i < e.Plan.Manifest.Count; i++)

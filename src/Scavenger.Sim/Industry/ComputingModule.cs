@@ -368,7 +368,12 @@ public sealed class ComputingModule : IPersistentModule
                 : .25m + world.Module<WorkforceModule>().Find(plan.TechnicianId!.Value)!.Skills.Rating(profile.Machine ? "computing" : "electronics") / 100m;
             if (plan.Kind is ComputerTaskKind.TrainAdapter or ComputerTaskKind.ValidateAdapter)
                 rate *= computer.ComponentIds.Select(id => Definition(Component(id)!.DefinitionId)!).Single(d => d.Kind == ComponentKind.GraphicsCard).ComputeRating / 50m;
+            decimal priorProgress = job.Progress;
             job.Progress = Math.Min(profile.Effort, job.Progress + rate);
+            if (plan.Kind == ComputerTaskKind.Study && plan.TechnicianId is { } reader)
+                Skills.SkillsModule.Credit(world, reader, "research", (job.Progress - priorProgress) / 4);
+            if (profile.HandsOn && plan.Kind != ComputerTaskKind.Study && plan.TechnicianId is { } handsOnWorker)
+                Skills.SkillsModule.Credit(world, handsOnWorker, profile.Machine ? "computing" : "electronics", job.Progress - priorProgress);
             if (plan.Kind == ComputerTaskKind.TrainAdapter && job.Progress - job.Checkpoint >= 6) job.Checkpoint = job.Progress;
             if (profile.Machine) WearComputer(computer);
             if (job.Progress < profile.Effort) continue;

@@ -4,7 +4,7 @@ A playable systems prototype for a compound-management game about scavenging, ch
 repair, logistics, and rebuilding industrial capability after an undecided apocalypse.
 The prototype combines operational tables with a physical 2D compound in Avalonia.
 
-[Play guide](docs/MAP-CENTERED-UI.md) · [Map-centered UI plan](docs/MAP-CENTERED-UI-PLAN.md) · [Baseline playability](docs/BASIC-PLAYABILITY.md) · [Playability plan](docs/BASIC-PLAYABILITY-PLAN.md) ·
+[Skills and learning](docs/SKILLS-AND-LEARNING.md) · [Headless play guide](docs/CLI-PLAY.md) · [Play guide](docs/MAP-CENTERED-UI.md) · [Map-centered UI plan](docs/MAP-CENTERED-UI-PLAN.md) · [Baseline playability](docs/BASIC-PLAYABILITY.md) · [Playability plan](docs/BASIC-PLAYABILITY-PLAN.md) ·
 [Working content outline](docs/CONTENT-OUTLINE.md) · [Engine foundations](docs/ENGINE-FOUNDATIONS.md) ·
 [Physical implementation plan](docs/PHYSICAL-COMPOUND-PLAN.md) · [Physical implementation and verification](docs/PHYSICAL-COMPOUND.md) ·
 [Production/computing plan](docs/PRODUCTION-AND-COMPUTING-PLAN.md) ·
@@ -17,7 +17,7 @@ The prototype combines operational tables with a physical 2D compound in Avaloni
 
 - `docs/`: provisional design and implementation notes.
 - `src/Scavenger.Sim/`: physical world, construction, utilities, scenario, commands, and reports.
-- `src/Scavenger.Cli/`: scripted simulation, save/load demonstration, and JSON reports.
+- `src/Scavenger.Cli/`: interactive headless gameplay, command files, scripted demonstrations and JSON reports.
 - `src/Scavenger.Desktop/`: Avalonia operator console, live dashboard, persistent workspaces, maps, searchable registers and commands.
 - `tests/`: simulation integration/replay and real Avalonia input/rendering tests.
 - `haldane/haldane/`: existing independent Haldane engine checkout. It is deliberately
@@ -38,6 +38,8 @@ on `feature/production-and-scavenged-computing` at the pinned revision.
 Requires the .NET 10 SDK.
 
 ```sh
+dotnet run --project src/Scavenger.Cli -- --play
+dotnet run --project src/Scavenger.Cli -- --script docs/playthroughs/skills.cli
 dotnet run --project src/Scavenger.Cli -- --roundtrip
 dotnet run --project src/Scavenger.Cli -- --json
 dotnet run --project src/Scavenger.Cli -- --world --seed 42 --json --map artifacts/world-42.svg
@@ -49,6 +51,12 @@ dotnet run --project src/Scavenger.Desktop -- --screenshot artifacts/region.png 
 dotnet test Scavenger.slnx
 dotnet test haldane/haldane/Haldane.slnx
 ```
+
+The playable CLI starts with time paused and runs no demonstration commands. Use `help`,
+`skills`, `find`, `site`, `expedition`, `study`, `practice`, `produce`, `until last`, and
+`save` / `load` to manage the same simulation as Desktop. `--script path` executes a
+command file and stops on rejected actions; `--play --load path` resumes a save.
+See [the CLI guide](docs/CLI-PLAY.md) for syntax and a tested progression.
 
 The CLI demonstration assigns a mechanic to pump inspection, delivers recovered HDPE,
 and builds an extension bench using physically delivered steel and timber. Closing the
@@ -85,6 +93,12 @@ managing production/power/transfers, servicing computers or reviewing tasks. Sid
 collapse without losing plans. Registers retains searchable detailed tables. See the
 [current play guide](docs/MAP-CENTERED-UI.md) for the complete loop.
 
+In **Compound → Crew**, each member has sixteen independent skills. Recover matching
+manuals through **Find next-level material**, study them, then earn practical XP by
+working or practising (optionally with a qualified mentor). Books are reusable physical
+items, and learning competes for labor and fixture access. Both gates are required for
+each of ten levels. See [the progression design](docs/SKILLS-AND-LEARNING.md).
+
 In **Compound**, choose a map tool and click a site, or
 inspect an existing fixture. Room zones use two interior corners. Right-click
 inspects without placing. The inspector supports door operation, repair, cancellation,
@@ -99,7 +113,7 @@ dotnet run --project src/Scavenger.Desktop -- --screenshot artifacts/ui-home.png
 dotnet run --project src/Scavenger.Desktop -- --screenshot artifacts/ui-region.png --view region --seed 42 --width 1050 --height 780
 ```
 
-Screenshot views include home, compound, region, region-setup, scavenging, clinic,
+Screenshot views include home, compound, crew, region, region-setup, scavenging, clinic,
 yields, production, recipes, hardware, archives, compute, energy, transfers and
 all six register views. `--ticks` defaults to zero so captures do not silently
 start demonstration orders.

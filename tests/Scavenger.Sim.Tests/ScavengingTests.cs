@@ -232,7 +232,7 @@ public class ScavengingTests
         Until(s, () => Region(s).Find("pharmacy-run")!.Status == ExpeditionStatus.Decision, respond: false);
         Assert.Equal(ExpeditionDecision.Structure, Region(s).Find("pharmacy-run")!.Decision);
         s.Queue(new RespondToExpeditionCommand("pharmacy-run", ExpeditionResponse.Wait)); s.Advance();
-        Assert.Equal(5, Region(s).Find("pharmacy-run")!.DelayTicks);
+        Assert.Equal(4, Region(s).Find("pharmacy-run")!.DelayTicks); // Ivo's navigation reduces assessment by one tick.
         Until(s, () => !Region(s).Find("pharmacy-run")!.Active);
         Assert.Equal(3, Region(s).Find("pharmacy-run")!.Receipts.Count);
         var (_, closed, _) = ScavengingScenario.Create(); Dispatch(closed, Pharmacy());

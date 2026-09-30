@@ -11,6 +11,7 @@ using Scavenger.Sim.Physical;
 using Scavenger.Sim.Industry;
 using Scavenger.Sim.Scavenging;
 using Scavenger.Sim.Region;
+using Scavenger.Sim.Skills;
 
 [assembly: CollectionBehavior(DisableTestParallelization = true)]
 namespace Scavenger.Desktop.Tests;
@@ -713,6 +714,72 @@ public class CompoundWindowTests
                 }
             }
             finally { window.Close(); File.Delete(window.SavePath); }
+        }, CancellationToken.None);
+    }
+    [Theory]
+    [InlineData(1050, 780)]
+    [InlineData(1440, 1000)]
+    public async Task CrewCanFindRecoverStudyCancelResumeAndPractiseWholeBooksThroughMouseControls(int width, int height)
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(RenderAppBuilder));
+        await session.Dispatch(() =>
+        {
+            var window = new MainWindow { Width = width, Height = height }; window.Show();
+            try
+            {
+                window.Navigate("compound"); Click(window, Find<Button>(window, "CompoundCrewButton"));
+                SelectChoice(window, "LearningMember", "3"); SelectChoice(window, "LearningSkill", "construction");
+                Assert.False(Find<Button>(window, "StartSkillStudyButton").IsEnabled);
+                Assert.False(Find<Button>(window, "StartSkillPracticeButton").IsEnabled);
+                long tick = window.Session.World.Clock.Tick;
+                Click(window, Find<Button>(window, "FindSkillBookButton"));
+                Assert.Equal(tick, window.Session.World.Clock.Tick);
+                Assert.Equal("book/construction/7", Find<TextBox>(window, "ScoutSearch").Text);
+                Click(window, Find<Button>(window, "ScoutSite_apartments-005"));
+                Click(window, Find<Button>(window, "PlanRegionalExpeditionButton"));
+                Click(window, Find<Button>(window, "PlanStep1Button"));
+                window.Scavenging.TeamSelector.SelectedItems!.Clear();
+                window.Scavenging.TeamSelector.SelectedItems.Add(window.Scavenging.TeamSelector.Items.Cast<Choice>().Single(c => c.Id == "2"));
+                Click(window, Find<Button>(window, "PlanStep2Button"));
+                var cargo = window.Scavenging.SalvageSelector;
+                cargo.SelectedItems!.Clear();
+                cargo.SelectedItems.Add(cargo.Items.Cast<Choice>().Single(c => c.Id == "manual-1-construction-7"));
+                Dispatcher.UIThread.RunJobs();
+                Assert.DoesNotContain(window.GetVisualDescendants().OfType<NumericUpDown>(), n => n.Name == "CargoKg_manual_1_construction_7");
+                Click(window, Find<Button>(window, "DispatchExpeditionButton"));
+                var expedition = window.Session.World.Module<ScavengingModule>().Expeditions.Single();
+                Assert.Equal(.4m, expedition.Plan.Manifest.Single().QuantityKg);
+                AdvanceUntil(window, () => !expedition.Active);
+                window.Navigate("crew");
+                Click(window, Find<Button>(window, "StartSkillStudyButton"));
+                window.Session.Advance(22);
+                var skills = window.Session.World.Module<SkillsModule>();
+                var job = skills.Jobs.Single(j => j.Active);
+                Assert.True(skills.Find(3, "construction")!.StudyEffort > 0);
+                Click(window, Find<Button>(window, "CancelLearning_" + job.Plan.Id));
+                decimal partial = skills.Find(3, "construction")!.StudyEffort;
+                Assert.Null(window.Session.World.Module<Haldane.CareerSim.Work.WorkforceModule>().ReservationFor(3));
+                Click(window, Find<Button>(window, "StartSkillStudyButton"));
+                Assert.True(skills.Find(3, "construction")!.StudyEffort >= partial);
+                AdvanceUntil(window, () => skills.Jobs.All(j => !j.Active));
+                Assert.Equal(6, skills.Find(3, "construction")!.Level); Assert.True(skills.Find(3, "construction")!.TheoryReady);
+                Assert.True(Find<Button>(window, "StartSkillPracticeButton").IsEnabled);
+                Capture("theory");
+                Click(window, Find<Button>(window, "StartSkillPracticeButton"));
+                AdvanceUntil(window, () => skills.Jobs.All(j => !j.Active));
+                Assert.Equal(7, skills.Find(3, "construction")!.Level);
+                Assert.Equal(70, window.Session.World.Module<Haldane.CareerSim.Work.WorkforceModule>().Find(3)!.Skills.Rating("construction"));
+                Assert.True(window.Map.Bounds.Width > 400); Assert.True(window.Map.Bounds.Height >= 320);
+                Capture("promoted"); PhysicalSave.ValidateWorld(window.Session.World);
+                void Capture(string phase)
+                {
+                    Find<ComboBox>(window, "LearningMember").BringIntoView(); Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
+                    using var frame = window.CaptureRenderedFrame(); Assert.NotNull(frame);
+                    if (Environment.GetEnvironmentVariable("SCAVENGER_UI_ARTIFACT_DIR") is { } directory)
+                    { Directory.CreateDirectory(directory); frame!.Save(Path.Combine(directory, $"skills-{phase}-{width}x{height}.png"), PngBitmapEncoderOptions.Default); }
+                }
+            }
+            finally { window.Close(); }
         }, CancellationToken.None);
     }
     private static void SelectChoice(MainWindow window, string name, string id)

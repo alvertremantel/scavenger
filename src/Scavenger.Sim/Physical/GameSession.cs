@@ -31,6 +31,8 @@ public sealed class GameSession
     public World World => Scheduler.World;
     public PhysicalReport Report => PhysicalReport.Capture(World);
     public string Status { get; private set; }
+    /// <summary>The last guarded time advance stopped for a decision, warning, fuel or power problem.</summary>
+    public bool LastAdvanceNeedsAttention { get; private set; }
     public event Action? Changed;
 
     public CommandResult Submit(ICommand command)
@@ -47,6 +49,7 @@ public sealed class GameSession
                     : command is DispatchExpeditionCommand expedition && World.Has<ScavengingModule>() ? World.Module<ScavengingModule>().Explain(World, expedition.Plan) ?? "Expedition is unavailable."
                     : command is QueueTreatmentCommand treatment && World.Has<ScavengingModule>() ? World.Module<ScavengingModule>().ExplainTreatment(World, treatment.Plan) ?? "Clinic care is unavailable."
                     : command is StoreTransferCommand transfer ? transfer.Explain(World) ?? "Transfer is unavailable."
+                    : command is Skills.StartLearningCommand learning && World.Has<Skills.SkillsModule>() ? World.Module<Skills.SkillsModule>().Explain(World, learning.Plan) ?? "Learning is unavailable."
                     : "Action is unavailable in the current state.";
             Changed?.Invoke();
             return new CommandResult(false, Status);
@@ -59,16 +62,18 @@ public sealed class GameSession
     }
     public FastForwardResult Advance(int ticks = 1, bool stopOnDecision = false)
     {
+        LastAdvanceNeedsAttention = false;
         if (ticks < 0) throw new ArgumentOutOfRangeException(nameof(ticks));
         if (stopOnDecision && PendingDecision is { } pending)
         {
+            LastAdvanceNeedsAttention = true;
             Status = pending;
             Changed?.Invoke();
             return new FastForwardResult(0, [], true);
         }
         var conditions = stopOnDecision ? new FastForwardStopConditions
         { MinSeverityToStop = Haldane.Kernel.Events.EventSeverity.Warning,
-          StopOnKinds = new HashSet<string>(StringComparer.Ordinal) { ScavengingEvents.Decision, ScavengingEvents.Completed, IndustryEvents.Completed, CompoundEventKinds.ConstructionCompleted } }
+          StopOnKinds = new HashSet<string>(StringComparer.Ordinal) { ScavengingEvents.Decision, ScavengingEvents.Completed, IndustryEvents.Completed, CompoundEventKinds.ConstructionCompleted, Skills.SkillEvents.Learned, Skills.SkillEvents.Promoted } }
             : FastForwardStopConditions.RunToEnd;
         var events = new List<Haldane.Kernel.Events.GameEvent>();
         int advanced = 0; bool stopped = false, fuelWarning = false;
@@ -79,10 +84,11 @@ public sealed class GameSession
             var frame = Scheduler.FastForward(1, conditions); advanced++; events.AddRange(frame.Events);
             bool lostPower = hadPower && World.Has<EnergyModule>() && World.Module<EnergyModule>().LastFrame is { } power && power.ServedKw < power.RequestedKw;
             fuelWarning = priorFuel >= 3 && TankFuel() < 3;
-            if (stopOnDecision && (frame.StoppedEarly || PendingDecision is not null || lostPower || fuelWarning)) { stopped = true; break; }
+            if (stopOnDecision && (frame.StoppedEarly || PendingDecision is not null || lostPower || fuelWarning)) { stopped = true; LastAdvanceNeedsAttention = PendingDecision is not null || lostPower || fuelWarning
+                || frame.Events.Any(e => e.Severity >= Haldane.Kernel.Events.EventSeverity.Warning); break; }
         }
         var result = new FastForwardResult(advanced, events, stopped);
-        Status = result.StoppedEarly && fuelWarning ? $"Generator tank is low ({TankFuel():0.00} kg). Open Compound / Power to deliver depot fuel, or plan a fuel expedition." : result.StoppedEarly ? PendingDecision ?? $"Stopped at tick {World.Clock.Tick}: {result.Events.LastOrDefault(e => e.Severity >= Haldane.Kernel.Events.EventSeverity.Warning || e.Kind == ScavengingEvents.Completed || e.Kind == IndustryEvents.Completed || e.Kind == CompoundEventKinds.ConstructionCompleted)?.Description ?? "Review the latest activity or power supply."}" : $"Advanced to tick {World.Clock.Tick}.";
+        Status = result.StoppedEarly && fuelWarning ? $"Generator tank is low ({TankFuel():0.00} kg). Open Compound / Power to deliver depot fuel, or plan a fuel expedition." : result.StoppedEarly ? PendingDecision ?? $"Stopped at tick {World.Clock.Tick}: {result.Events.LastOrDefault(e => e.Severity >= Haldane.Kernel.Events.EventSeverity.Warning || e.Kind == ScavengingEvents.Completed || e.Kind == IndustryEvents.Completed || e.Kind == CompoundEventKinds.ConstructionCompleted || e.Kind == Skills.SkillEvents.Learned || e.Kind == Skills.SkillEvents.Promoted)?.Description ?? "Review the latest activity or power supply."}" : $"Advanced to tick {World.Clock.Tick}.";
         Changed?.Invoke();
         return result;
     }
@@ -153,7 +159,8 @@ public sealed class GameSession
         while (true)
         {
             string id = $"{prefix}-{World.Clock.Tick}-{suffix++}";
-            if (World.Module<ConstructionModule>().FindJob(id) is null && World.Module<LogisticsModule>().FindJob(id) is null
+            if ((!World.Has<Skills.SkillsModule>() || World.Module<Skills.SkillsModule>().Job(id) is null)
+                && World.Module<ConstructionModule>().FindJob(id) is null && World.Module<LogisticsModule>().FindJob(id) is null
                 && World.Module<CompoundModule>().FindBuilding(id) is null
                 && (!World.Has<ProductionModule>() || World.Module<ProductionModule>().Find(id) is null)
                 && (!World.Has<ComputingModule>() || World.Module<ComputingModule>().Job(id) is null)

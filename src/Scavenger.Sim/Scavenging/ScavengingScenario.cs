@@ -23,7 +23,7 @@ public static class ScavengingScenario
         inventory.AddBatch(new("starting-prybar", "tool.prybar", "salvage", 1, new(1, "serviceable tool")));
         inventory.AddBatch(new("starting-protection", "supply.protection", "salvage", 1, new(.99m, "sealed protective consumables")));
         var scavenging = new ScavengingModule(); world.Register(scavenging);
-        foreach (var location in Region()) scavenging.AddLocation(location);
+        foreach (var location in Region()) scavenging.AddLocation(Skills.EducationLoot.Add(location, location.Id, world.Rng.Stream($"skills.loot/{location.Id}")));
         foreach (var resident in world.Module<Haldane.CareerSim.Work.WorkforceModule>().Staff) scavenging.AddResident(resident.Id, sick: resident.Id == 1);
         // A returned sick mechanic makes pharmacy/hardware/clinic logistics an immediate decision.
         world.Module<Haldane.CareerSim.Work.WorkforceModule>().Find(1)!.Present = false;
@@ -31,7 +31,8 @@ public static class ScavengingScenario
         PhysicalSave.ValidateWorld(world);
         return (world, new Scheduler(world, Systems()), CreateCatalogue());
     }
-    public static IEnumerable<ISystem> Systems() => IndustrialScenario.Systems().Append(new ScavengingSystem());
+    public static IEnumerable<ISystem> Systems() => IndustrialScenario.Systems().Where(s => s is not Skills.LearningSystem).Concat(new ISystem[] { new ScavengingSystem(),
+        new Skills.LearningSystem([typeof(ScavengingSystem), typeof(Skills.SkilledProjectSystem)]) });
     public static EventCatalogue CreateCatalogue()
     { var c = IndustrialScenario.CreateCatalogue(); ScavengingEvents.RegisterAll(c); return c; }
     private static SalvageDefinition Bulk(string id, string source, string material, decimal kg, decimal purity,

@@ -23,9 +23,18 @@ public static class IndustrialScenario
             var skills = worker.Skills.Ratings.ToDictionary(s => s.Key, s => s.Value, StringComparer.Ordinal);
             skills["electronics"] = worker.Id == 1 ? 60 : worker.Id == 3 ? 45 : 20;
             skills["computing"] = worker.Id == 1 ? 65 : worker.Id == 4 ? 45 : 20;
+            skills["scavenging"] = worker.Id == 2 ? 35 : 20;
+            skills["navigation"] = worker.Id == 2 ? 30 : 10;
+            skills["survival"] = worker.Id == 3 ? 30 : 20;
+            skills["agriculture"] = worker.Id == 2 ? 20 : 0;
+            skills["cooking"] = worker.Id == 4 ? 30 : 10;
+            skills["metalworking"] = worker.Id == 3 ? 30 : worker.Id == 1 ? 40 : 0;
+            skills["tailoring"] = worker.Id == 4 ? 20 : 0;
+            skills["research"] = worker.Id == 1 ? 40 : worker.Id == 4 ? 30 : 10;
             roster.Hire(new StaffMember { Id = worker.Id, Name = worker.Name, Skill = worker.Skill, DailyWage = worker.DailyWage, Present = worker.Present, Skills = new SkillProfile(skills) });
         }
         world.Register(roster);
+        Skills.SkillsModule.Initialize(world);
         var inventory = world.Module<InventoryModule>(); var compound = world.Module<CompoundModule>(); var utilities = world.Module<UtilitiesModule>();
         foreach (var (id, name) in new[] { ("water.clean", "Process water"), ("fuel.diesel", "Generator diesel"),
             ("polymer.hdpe.washed", "Washed HDPE"), ("polymer.hdpe.dry", "Dried HDPE"), ("polymer.hdpe.flakes", "HDPE flakes"),
@@ -110,7 +119,8 @@ public static class IndustrialScenario
     }
     public static IEnumerable<ISystem> Systems() => [new CalendarSystem(), new ConstructionSystem(), new StandingOrderSystem(),
         new IndustryPreparationSystem(), new UtilitySystem(), new ProductionSystem(), new ComputingSystem(), new ProjectTravelSystem(),
-        new WorkSystem(new CompoundWorkContext()), new LogisticsSystem(new CompoundTransportDriver()), new EnergyAccountingSystem()];
+        new Skills.SkilledProjectSystem(), new LogisticsSystem(new CompoundTransportDriver()), new EnergyAccountingSystem(),
+        new Skills.LearningSystem([typeof(EnergyAccountingSystem), typeof(Skills.SkilledProjectSystem)])];
     public static EventCatalogue CreateCatalogue()
     { var catalogue = PhysicalCompoundScenario.CreateCatalogue(); IndustryEvents.RegisterAll(catalogue); return catalogue; }
     public static IEnumerable<RecipeDefinition> Recipes()

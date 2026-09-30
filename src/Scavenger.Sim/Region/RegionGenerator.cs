@@ -96,7 +96,7 @@ public static class RegionGenerator
                 string id = $"{type.Id}-{n:000}"; var content = streams.Stream($"region.v2.content/{id}"); int variant = starter ? 0 : content.NextInt(type.Variants.Count);
                 int meters = (distance[access] + 2) * CellMeters;
                 sites.Add(new(id, type.Id, type.Variants[variant], parcel, access, meters));
-                locations.Add(RegionalContent.Instantiate(type, id, variant, parcel, (meters + speed - 1) / speed, cells[parcel.Y * Size + parcel.X], content, starter));
+                locations.Add(Skills.EducationLoot.Add(RegionalContent.Instantiate(type, id, variant, parcel, (meters + speed - 1) / speed, cells[parcel.Y * Size + parcel.X], content, starter), type.Id, streams.Stream($"skills.loot/{id}")));
             }
         }
         string[] names = ["Willow", "Ash", "Morrow", "Cedar", "Birch", "Alder", "Mill", "Oak"];

@@ -147,7 +147,7 @@ public sealed class ScavengingPanel : UserControl
         var manifest = SalvageSelector.SelectedItems!.Cast<Choice>().Select(c =>
         {
             var s = location.Definition.Salvage.Single(s => s.Id == c.Id);
-            return new SalvageRequest(s.Id, s.ComponentId is not null ? s.InitialKg : _amounts.GetValueOrDefault(c.Id, _quantity.Value ?? 1));
+            return new SalvageRequest(s.Id, (s.ComponentId is not null || Scavenger.Sim.Skills.SkillCatalogue.IsBook(s.MaterialId)) ? s.InitialKg : _amounts.GetValueOrDefault(c.Id, _quantity.Value ?? 1));
         }).ToArray();
         return new(_session.NextId("expedition"), locationId, TeamSelector.SelectedItems!.Cast<Choice>().Select(c => int.Parse(c.Id)).Order().ToArray(), manifest,
             Approach: _approach.SelectedItem is ExpeditionApproach approach ? approach : ExpeditionApproach.Careful, UseProtection: _protection.IsChecked == true);
@@ -190,12 +190,12 @@ public sealed class ScavengingPanel : UserControl
         {
             var s = location.Definition.Salvage.Single(s => s.Id == c.Id);
             decimal value = _amounts.GetValueOrDefault(c.Id, Math.Min(_quantity.Value ?? 1, location.Remaining(s.Id)));
-            _amounts[c.Id] = s.ComponentId is not null ? s.InitialKg : value;
+            _amounts[c.Id] = (s.ComponentId is not null || Scavenger.Sim.Skills.SkillCatalogue.IsBook(s.MaterialId)) ? s.InitialKg : value;
             var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 12 };
             row.Children.Add(Text($"{s.Object}\n{location.Remaining(s.Id):0.###} kg available", 11));
             ToolTip.SetTip(row, $"{s.MaterialId} · {s.Qualification.SkillId} {s.Qualification.MinimumRating} · purity {s.Quality.Purity:P1} · {s.Quality.Grade}");
             Control amount;
-            if (s.ComponentId is not null) amount = Text($"Whole unit / {s.InitialKg:0.###} kg");
+            if (s.ComponentId is not null || Scavenger.Sim.Skills.SkillCatalogue.IsBook(s.MaterialId)) amount = Text($"Whole unit / {s.InitialKg:0.###} kg");
             else
             {
                 var input = new NumericUpDown { Name = "CargoKg_" + s.Id.Replace('-', '_'), Minimum = .001m, Maximum = 48, Increment = .1m, Value = Math.Max(.001m, value), Width = 110, FormatString = "0.000" };
@@ -251,7 +251,7 @@ public sealed class ScavengingPanel : UserControl
             }
             _yields.Children.Clear();
             foreach (var s in l.Definition.Salvage)
-                _yields.Children.Add(Text($"{s.Object}\n  {l.Remaining(s.Id):0.###}/{s.InitialKg} kg {s.MaterialId} · purity {s.Quality.Purity:P1} · {s.Quality.Grade} · {s.Qualification.SkillId} {s.Qualification.MinimumRating} · access ≥{s.MinimumIntegrity:P0}{(s.NeedsPrybar ? " + prybar" : "")} · {s.EffortPerKg} effort/kg{(s.ComponentId is not null ? " · WHOLE UNIT" : "")}"));
+                _yields.Children.Add(Text($"{s.Object}\n  {l.Remaining(s.Id):0.###}/{s.InitialKg} kg {s.MaterialId} · purity {s.Quality.Purity:P1} · {s.Quality.Grade} · {s.Qualification.SkillId} {s.Qualification.MinimumRating} · access ≥{s.MinimumIntegrity:P0}{(s.NeedsPrybar ? " + prybar" : "")} · {s.EffortPerKg} effort/kg{((s.ComponentId is not null || Scavenger.Sim.Skills.SkillCatalogue.IsBook(s.MaterialId)) ? " · WHOLE UNIT" : "")}"));
         }
         _planContext.Text = $"{module.Location(Selected(_location)!)!.Definition.Name}\nCrew: {string.Join(", ", TeamSelector.SelectedItems!.Cast<Choice>().Select(c => workforce.Find(int.Parse(c.Id))!.Name))}";
         Choices(_medicalJob, _session.World.Module<ProductionModule>().Jobs.Where(j => j.Active && j.Plan.StationId == "clinic-station").Select(j => new Choice(j.Plan.Id, j.Plan.RecipeId)));

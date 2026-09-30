@@ -47,6 +47,7 @@ public sealed class ScavengingModule : IPersistentModule
         foreach (var s in d.Salvage)
             if (string.IsNullOrWhiteSpace(s.Id) || string.IsNullOrWhiteSpace(s.Object) || string.IsNullOrWhiteSpace(s.MaterialId)
                 || s.InitialKg <= 0 || s.EffortPerKg <= 0 || s.MinimumIntegrity is < 0 or > 1 || s.Quality is null || s.Qualification is null
+                || (Skills.SkillCatalogue.IsBook(s.MaterialId) && (Skills.SkillCatalogue.Book(s.MaterialId) is null || s.InitialKg != Skills.SkillBook.MassKg || s.ComponentId is not null))
                 || (s.ComponentId is null) != (s.ComponentModel is null) || !Enum.IsDefined(s.Fault) || s.ComponentCondition is < 0 or > 1
                 || (s.Assets ?? []).Any(a => a.SourceMediaId != s.ComponentId || string.IsNullOrWhiteSpace(a.Id) || string.IsNullOrWhiteSpace(a.Name)
                     || a.SizeGiB <= 0 || a.Integrity is < 0 or > 1 || a.Capabilities.Count == 0 || a.Capabilities.Concat(a.Dependencies).Any(string.IsNullOrWhiteSpace)))
@@ -86,7 +87,7 @@ public sealed class ScavengingModule : IPersistentModule
         {
             var entry = location.Definition.Salvage.FirstOrDefault(s => s.Id == request.SalvageId);
             if (entry is null || request.QuantityKg <= 0 || request.QuantityKg > location.Remaining(request.SalvageId)) return "Requested salvage is unknown, depleted, or smaller than the requested quantity.";
-            if (entry.ComponentId is not null && request.QuantityKg != entry.InitialKg) return "Computer units must be recovered whole.";
+            if ((entry.ComponentId is not null || Skills.SkillCatalogue.IsBook(entry.MaterialId)) && request.QuantityKg != entry.InitialKg) return "Computer units and educational volumes must be recovered whole.";
             if (!plan.Team.Any(id => world.Module<WorkforceModule>().Find(id)!.Skills.Meets(entry.Qualification)))
                 return $"{entry.Object} needs {entry.Qualification.SkillId} {entry.Qualification.MinimumRating}.";
             if (location.Integrity < AccessIntegrity(world, plan, entry)) return $"{entry.Object} is structurally inaccessible to this team/approach.";
@@ -141,7 +142,7 @@ public sealed class ScavengingModule : IPersistentModule
     {
         if (e.Status != ExpeditionStatus.Decision || !Enum.IsDefined(response)) throw new InvalidOperationException("No valid pending decision.");
         if (response == ExpeditionResponse.Retreat) return Recall(world, e);
-        e.DelayTicks = e.Decision == ExpeditionDecision.Structure ? 6 : 4;
+        e.DelayTicks = e.Decision == ExpeditionDecision.Structure ? Math.Max(2, 6 - Skill(world, e, "navigation") / 25) : 4;
         e.Reason = e.Decision == ExpeditionDecision.Structure ? "Assessing and finding a safe approach." : "Waiting for the rival crew to leave; stocks may change.";
         e.Status = ExpeditionStatus.Searching; e.Decision = null;
         return [ScavengingEvents.Event(world, ScavengingEvents.Changed, $"{e.Plan.Id}: {e.Reason}")];
@@ -168,7 +169,7 @@ public sealed class ScavengingModule : IPersistentModule
                 if (budget <= 0) break;
                 if (location.Integrity < entry.MinimumIntegrity) continue;
                 decimal take = Math.Min(budget, location.Remaining(entry.Id));
-                if (entry.ComponentId is not null && take < entry.InitialKg) continue;
+                if ((entry.ComponentId is not null || Skills.SkillCatalogue.IsBook(entry.MaterialId)) && take < entry.InitialKg) continue;
                 if (take == 0) continue;
                 location.Remove(entry.Id, take); location.RemovedByRivals[entry.Id] = location.RemovedByRivals.GetValueOrDefault(entry.Id) + take;
                 budget -= take;
@@ -178,7 +179,11 @@ public sealed class ScavengingModule : IPersistentModule
     private void Expose(World world, Expedition e, ScavengeLocation location)
     {
         decimal rate = location.Definition.ExposurePerTick * (e.Plan.UseProtection ? .2m : 1) * (e.Plan.Approach == ExpeditionApproach.Quick ? 1.5m : 1);
-        foreach (int id in e.Plan.Team) _health[id] = _health[id] with { Exposure = _health[id].Exposure + rate };
+        foreach (int id in e.Plan.Team)
+        {
+            int safety = world.Module<WorkforceModule>().Find(id)!.Skills.Rating("survival");
+            _health[id] = _health[id] with { Exposure = _health[id].Exposure + rate * (1 - safety / 400m) };
+        }
     }
     private void TickExpedition(World world, Expedition e, List<GameEvent> events)
     {
@@ -211,6 +216,7 @@ public sealed class ScavengingModule : IPersistentModule
                 events.Add(ScavengingEvents.Event(world, ScavengingEvents.Changed, $"{e.Plan.Id}: team departed for {location.Definition.Name}."));
                 break;
             case ExpeditionStatus.Outbound:
+                foreach (int id in e.Plan.Team) Skills.SkillsModule.Credit(world, id, "navigation", .25m);
                 if (++e.ElapsedTravel < TravelTicks(location, e)) return;
                 e.ElapsedTravel = 0; e.Status = ExpeditionStatus.Searching; e.Reason = null;
                 var rng = world.Rng.Stream("scavenging.incidents");
@@ -240,7 +246,19 @@ public sealed class ScavengingModule : IPersistentModule
                 }
                 decimal take = Math.Min(request.QuantityKg, location.Remaining(entry.Id));
                 decimal effort = take * entry.EffortPerKg * (e.Plan.Approach == ExpeditionApproach.Careful ? 1.25m : 1);
-                e.SearchEffort += Math.Max(.1m, Skill(world, e, entry.Qualification.SkillId) / 100m);
+                string? secondary = FieldSpecialty(entry.MaterialId);
+                decimal rate = Math.Max(.1m, Skill(world, e, entry.Qualification.SkillId) / 100m)
+                    * (1 + Skill(world, e, "scavenging") / 500m + (secondary is null ? 0 : Skill(world, e, secondary) / 500m));
+                decimal contribution = Math.Min(rate, Math.Max(0, effort - e.SearchEffort));
+                e.SearchEffort += contribution;
+                int specialist = e.Plan.Team.OrderByDescending(id => world.Module<WorkforceModule>().Find(id)!.Skills.Rating(entry.Qualification.SkillId)).ThenBy(id => id).First();
+                Skills.SkillsModule.Credit(world, specialist, entry.Qualification.SkillId, contribution);
+                foreach (int id in e.Plan.Team)
+                {
+                    if (entry.Qualification.SkillId != "scavenging") Skills.SkillsModule.Credit(world, id, "scavenging", contribution / e.Plan.Team.Count / 2);
+                    Skills.SkillsModule.Credit(world, id, "survival", .1m);
+                    if (secondary is not null && secondary != entry.Qualification.SkillId) Skills.SkillsModule.Credit(world, id, secondary, contribution / e.Plan.Team.Count / 2);
+                }
                 e.Reason = $"Recovering {entry.Object}.";
                 if (e.SearchEffort < effort) return;
                 location.Remove(entry.Id, take);
@@ -281,6 +299,11 @@ public sealed class ScavengingModule : IPersistentModule
                 break;
         }
     }
+    private static string? FieldSpecialty(string materialId) => materialId switch
+    {
+        "food.dry" => "cooking", "nutrient.fertilizer" => "agriculture", "fabric" or "supply.protection" => "tailoring",
+        "metal.steel" or "metal.copper" or "metal.aluminum" => "metalworking", _ => null
+    };
     private static void ReleaseUnusedSpace(World world, Expedition e)
     {
         for (int i = 0; i < e.Plan.Manifest.Count; i++)
@@ -348,7 +371,9 @@ public sealed class ScavengingModule : IPersistentModule
         }
         if (!arrived) { t.Reason ??= "Patient and medic are walking to the clinic."; return; }
         if (world.Module<UtilitiesModule>().ServiceFor(clinic.Id) is not { Operational: true }) { t.Reason = "The clinic needs working power, water and equipment."; return; }
+        decimal priorEffort = t.Effort;
         t.Effort = Math.Min(4, t.Effort + world.Module<WorkforceModule>().Find(t.Plan.MedicId)!.Skills.Rating("medicine") / 100m);
+        Skills.SkillsModule.Credit(world, t.Plan.MedicId, "medicine", t.Effort - priorEffort);
         t.Reason = null;
         if (t.Effort < 4) return;
         SpentSuppliesKg += inventory.TakeReservedStock(t.DoseClaim).QuantityKg; t.DoseClaim = null;

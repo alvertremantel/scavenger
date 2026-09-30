@@ -69,6 +69,7 @@ public static class PhysicalCompoundScenario
         var world = new World(new Clock(new TimeConfig(4)), new RngStreams(seed))
             .Register(workforce).Register(projects).Register(inventory).Register(logistics)
             .Register(compound).Register(new ConstructionModule()).Register(utilities);
+        Skills.SkillsModule.Initialize(world);
         UtilitySystem.Recalculate(world);
         PhysicalSave.ValidateWorld(world);
         return (world, new Scheduler(world, Systems()), catalogue);
@@ -79,11 +80,13 @@ public static class PhysicalCompoundScenario
         var catalogue = new EventCatalogue();
         CalendarEventKinds.RegisterAll(catalogue); CareerSimEventKinds.RegisterAll(catalogue);
         SupplyChainEventKinds.RegisterAll(catalogue); CompoundEventKinds.RegisterAll(catalogue);
+        Skills.SkillEvents.RegisterAll(catalogue);
         return catalogue;
     }
     public static IEnumerable<ISystem> Systems() =>
     [new CalendarSystem(), new ConstructionSystem(), new UtilitySystem(), new ProjectTravelSystem(),
-        new WorkSystem(new CompoundWorkContext()), new LogisticsSystem(new CompoundTransportDriver())];
+        new Skills.SkilledProjectSystem(), new LogisticsSystem(new CompoundTransportDriver()),
+        new Skills.LearningSystem([typeof(LogisticsSystem), typeof(Skills.SkilledProjectSystem)])];
 
     public static IEnumerable<BuildingDefinition> BuildCatalogue()
     {

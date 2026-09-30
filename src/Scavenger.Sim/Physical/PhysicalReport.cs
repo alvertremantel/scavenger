@@ -49,6 +49,7 @@ public sealed record PhysicalReport(long Tick, int Width, int Height, long Topol
             reason ??= world.TryModule<Industry.ComputingModule>(out var computing) ? computing.Jobs.FirstOrDefault(j => j.Active && j.Owner == workforce.ReservationFor(w.Id))?.BlockedReason : null;
             var expedition = world.TryModule<Scavenging.ScavengingModule>(out var scavenging) ? scavenging.Expeditions.FirstOrDefault(e => e.Active && e.Plan.Team.Contains(w.Id)) : null;
             var treatment = scavenging?.Treatments.FirstOrDefault(t => t.Active && (t.Plan.MedicId == w.Id || t.Plan.PatientId == w.Id));
+            reason ??= world.TryModule<Skills.SkillsModule>(out var skills) ? skills.Jobs.FirstOrDefault(j => j.Active && j.Owner == workforce.ReservationFor(w.Id))?.BlockedReason : null;
             reason ??= treatment?.Reason;
             reason ??= expedition?.Reason ?? (scavenging?.HealthOf(w.Id) is { Sick: true } ? "Ill; clinic care required." : null);
             return new PhysicalWorkerRow(w.Id, w.Name, compound.PositionOf(w.Id)!, workforce.ReservationFor(w.Id) ?? project?.Id,
@@ -84,6 +85,10 @@ public sealed record PhysicalReport(long Tick, int Width, int Height, long Topol
                     && computing.Jobs.FirstOrDefault(j => j.Active && j.Owner == workforce.ReservationFor(worker.Id)) is { } task)
                     target = compound.FindBuilding(task.Site.StationId)?.InteractionCell;
             }
+            if (target is null && world.TryModule<Skills.SkillsModule>(out var learning)
+                && learning.Jobs.FirstOrDefault(j => j.Active && j.Owner == workforce.ReservationFor(worker.Id)) is { } lesson)
+                target = lesson.Plan.Kind == Skills.LearningKind.Practice ? compound.FindBuilding(Skills.SkillCatalogue.Find(lesson.Plan.SkillId)!.FixtureId)?.InteractionCell
+                    : world.Module<InventoryModule>().FindBatch(lesson.Plan.BookBatchId!) is { } source ? world.Module<InventoryModule>().FindStockpile(source.StockpileId)?.Position : null;
             if (target is null && world.TryModule<Scavenging.ScavengingModule>(out var scavenging))
             {
                 var expedition = scavenging.Expeditions.FirstOrDefault(e => e.Active && e.Plan.Team.Contains(worker.Id));

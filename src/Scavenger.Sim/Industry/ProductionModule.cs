@@ -128,7 +128,10 @@ public sealed class ProductionModule : IPersistentModule
             if (reason is not null) { Block(world, job, reason, events); continue; }
             job.Status = ProductionStatus.Processing; Block(world, job, null, events);
             int skill = job.Plan.OperatorId is { } operatorId ? world.Module<WorkforceModule>().Find(operatorId)!.Skills.Rating(recipe.Qualification.SkillId) : 50;
+            decimal priorEffort = job.EffortCompleted;
             job.EffortCompleted = Math.Min(recipe.Effort, job.EffortCompleted + .25m + skill / 100m);
+            if (!job.Plan.Automatic && job.Plan.OperatorId is { } operatorWorker)
+                Skills.SkillsModule.Credit(world, operatorWorker, recipe.Qualification.SkillId, job.EffortCompleted - priorEffort);
             station.Condition = Math.Max(0, station.Condition - recipe.WearPerTick);
             if (job.EffortCompleted < recipe.Effort) continue;
             var receipt = Conversions.Complete(world.Module<InventoryModule>(), job.Site.InputOwners,

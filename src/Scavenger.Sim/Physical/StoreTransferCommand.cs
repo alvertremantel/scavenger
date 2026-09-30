@@ -24,6 +24,7 @@ public sealed class StoreTransferCommand(StoreTransferPlan plan) : IPersistentCo
         if (string.IsNullOrWhiteSpace(Plan.Id) || logistics.FindJob(Plan.Id) is not null || logistics.FindRoute(RouteId) is not null) return "Choose a unique transfer id.";
         if (inventory.FindBatch(Plan.BatchId) is not { } batch || inventory.FindStockpile(batch.StockpileId)?.Position is null
             || inventory.FindStockpile(Plan.DestinationId)?.Position is null || batch.StockpileId == Plan.DestinationId) return "Choose a physical source batch and a different destination store.";
+        if (Skills.SkillCatalogue.IsBook(batch.MaterialId) && Plan.QuantityKg != Skills.SkillBook.MassKg) return "An educational volume must be hauled whole.";
         if (world.TryModule<Industry.ComputingModule>(out var computing) && computing.Components.FirstOrDefault(c => c.MaterialId == batch.MaterialId) is { } component
             && Plan.QuantityKg != component.MassKg) return "A component must be hauled as one complete unit.";
         // The engine preflight only reads inventory/workforce from World. A temporary route avoids changing authoritative state.

@@ -40,6 +40,8 @@ public sealed class ConstructionSystem : ISystem
                     blocked = "Builder no longer meets this job's qualification.";
                 else if (workforce.ReservationFor(builder.Id) is not null || board.IsAssigned(builder.Id))
                     blocked = "Builder is assigned to another task.";
+                if (blocked is null && job.Request.RepairTargetId is { } learningTarget && world.TryModule<Skills.SkillsModule>(out var learning)
+                    && learning.Jobs.Any(j => j.Active && j.Plan.Kind == Skills.LearningKind.Practice && Skills.SkillCatalogue.Find(j.Plan.SkillId)!.FixtureId == learningTarget)) blocked = "Fixture is reserved for hands-on learning.";
                 if (blocked is null && job.Request.RepairTargetId is { } repairTarget && world.TryModule<Industry.EquipmentModule>(out var equipment)
                     && equipment.OwnerOf(repairTarget) is not null) blocked = "Fixture is operating or reserved by another task.";
                 if (blocked is not null) { SetReason(world, job, blocked, events); continue; }
@@ -76,7 +78,9 @@ public sealed class ConstructionSystem : ISystem
             job.Status = ConstructionStatus.Building;
             SetReason(world, job, null, events, false);
             int skill = workforce.Find(job.Request.BuilderId)!.Skills.Rating(ConstructionModule.Qualification(compound, job).SkillId);
+            decimal priorEffort = job.EffortCompleted;
             job.EffortCompleted = Math.Min(definition.EffortRequired, job.EffortCompleted + 0.25m + skill / 100m);
+            Skills.SkillsModule.Credit(world, job.Request.BuilderId, ConstructionModule.Qualification(compound, job).SkillId, job.EffortCompleted - priorEffort);
             if (job.EffortCompleted < definition.EffortRequired) continue;
 
             if (job.Request.RepairTargetId is null && compound.ExplainPlacement(definition, job.Request.Origin, job.InteractionCell) is { } placementReason)

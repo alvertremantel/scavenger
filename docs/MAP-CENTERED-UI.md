@@ -82,9 +82,17 @@ Computer & technician to change machine or operator. Existing repair, servicing,
 software copying, textbook study, telemetry, rule control, adapter training, validation
 and model deployment remain simulated workloads with real in-game resource claims.
 
-**Crew** shows duties and releases experimental project assignments. **Tasks** shows
-construction, production, transfers and computer work together, with cancellation
-controls. Long-lived stock orders may queue another batch after cancellation; pause
+**Crew** shows sixteen independent skills per member. Choose a member and specialty
+for their current level, studied theory, practical XP and remaining gate. **Find
+next-level material** searches Region for that precise manual. Recover the whole
+volume, return to Crew and study it. After the theory completes, productive work or
+**Start hands-on practice** earns practical XP. A qualified mentor speeds practice
+while committing their own labor. Learning walks to the physical book or exercise
+fixture. Cancellation keeps partial progress and frees the worker, book and mentor.
+Duties and project releases remain in the expandable assignment section.
+
+**Tasks** shows construction, production, transfers, computer work and learning
+together, with cancellation controls. Long-lived stock orders may queue another batch after cancellation; pause
 those orders in Production when freeing crew for other work.
 
 ## Registers and view state
@@ -102,8 +110,9 @@ UI selections are session-local and are not a new save-format promise.
 
 ## Verification
 
-Verified build: zero warnings/errors; 131 simulation tests and 17 desktop tests
-pass (148 total). Rendered views were checked at 1050 × 780 and 1440 × 1000.
+The previous UI baseline passed 131 simulation and 17 Desktop tests. The skills
+extension also adds CLI and learning regression coverage; see the current counts
+and playthrough evidence in [Skills and learning](SKILLS-AND-LEARNING.md). Rendered views were checked at 1050 × 780 and 1440 × 1000.
 
 Desktop tests exercise the four destinations, minimum-window map dimensions, mouse
 map navigation, sidebar collapse/reopen, plan retention, stock search → site → planner,

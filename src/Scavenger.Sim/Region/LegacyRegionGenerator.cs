@@ -78,7 +78,7 @@ internal static class LegacyRegionGenerator
                 int variant = starter ? 0 : contentRng.NextInt(type.Variants.Count);
                 int meters = (distance[access] + 2) * CellMeters;
                 var site = new RegionalSite(id, type.Id, type.Variants[variant], parcel, access, meters); sites.Add(site);
-                locations.Add(RegionalContent.Instantiate(type, id, variant, parcel, Math.Max(1, (meters + metersPerTick - 1) / metersPerTick), cells[parcel.Y * Size + parcel.X], contentRng, starter));
+                locations.Add(Skills.EducationLoot.Add(RegionalContent.Instantiate(type, id, variant, parcel, Math.Max(1, (meters + metersPerTick - 1) / metersPerTick), cells[parcel.Y * Size + parcel.X], contentRng, starter), type.Id, streams.Stream($"skills.loot/{id}")));
             }
         }
         string[] prefixes = ["Willow", "Ash", "Morrow", "Cedar", "Birch", "Alder", "Mill", "Oak"];
